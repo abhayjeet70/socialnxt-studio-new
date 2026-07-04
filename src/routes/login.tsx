@@ -134,7 +134,7 @@ function MicrosoftMark() {
 
 function LoginPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup" | "set_password">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "set_password" | "forgot_password">("signin");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -158,6 +158,20 @@ function LoginPage() {
     setMode(m);
     setErrorMsg("");
     setSuccessMsg("");
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) { setErrorMsg("Please enter your email address."); return; }
+    setIsLoading(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/login`,
+    });
+    setIsLoading(false);
+    if (error) { setErrorMsg(error.message); return; }
+    setSuccessMsg("Password reset email sent! Check your inbox and click the link to set a new password.");
   };
 
   const handleSetPassword = async (event: React.FormEvent) => {
@@ -315,6 +329,58 @@ function LoginPage() {
                   </Button>
                 </form>
               </>
+            ) : mode === "forgot_password" ? (
+              <>
+                <div className="mb-8 text-center">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100">
+                    <KeyRound className="h-7 w-7 text-blue-600" />
+                  </div>
+                  <h2 className="text-2xl font-bold tracking-normal">Reset your password</h2>
+                  <p className="mt-2 text-sm text-[#6b7a9b]">
+                    Enter your email and we'll send you a reset link.
+                  </p>
+                </div>
+
+                <form className="space-y-5" onSubmit={handleForgotPassword}>
+                  {errorMsg && (
+                    <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{errorMsg}</div>
+                  )}
+                  {successMsg && (
+                    <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">{successMsg}</div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="reset-email" className="text-sm font-semibold text-[#182652]">
+                      Email address
+                    </Label>
+                    <input
+                      id="reset-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Enter your email"
+                      required
+                      className="h-[54px] w-full rounded-lg border border-[#cfd8e8] bg-white px-4 text-base text-[#091437] placeholder:text-[#9aa8c4] focus:outline-none focus:ring-2 focus:ring-[#153dff]"
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="h-[54px] w-full rounded-lg bg-[#0828ff] text-base font-semibold text-white shadow-[0_12px_25px_rgba(8,40,255,0.25)] hover:bg-[#001bd1] disabled:opacity-70"
+                  >
+                    {isLoading ? "Sending..." : "Send Reset Link"}
+                  </Button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setMode("signin"); setErrorMsg(""); setSuccessMsg(""); }}
+                    className="w-full text-center text-sm font-semibold text-[#073cff] hover:underline"
+                  >
+                    ← Back to Sign In
+                  </button>
+                </form>
+              </>
             ) : (
               <>
             {/* Mode Tabs */}
@@ -421,7 +487,11 @@ function LoginPage() {
                     <Checkbox className="h-4 w-4 rounded-[3px] border-[#153dff] data-[state=checked]:bg-[#153dff]" />
                     Remember me
                   </label>
-                  <button type="button" className="text-sm font-semibold text-[#073cff] hover:underline">
+                  <button
+                    type="button"
+                    onClick={() => { setMode("forgot_password"); setErrorMsg(""); setSuccessMsg(""); }}
+                    className="text-sm font-semibold text-[#073cff] hover:underline"
+                  >
                     Forgot password?
                   </button>
                 </div>

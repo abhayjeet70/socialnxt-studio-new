@@ -7,9 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Filter, MoreHorizontal, Loader2, Check } from "lucide-react";
+import { Plus, Search, Filter, MoreHorizontal, Loader2, Check, Users } from "lucide-react";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
-import { useCurrentWorkspace, useClients, useCreateClient } from "@/lib/queries";
+import { useCurrentWorkspace, useClients, useCreateClient, useWorkspaceMembers } from "@/lib/queries";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/clients")({
@@ -42,8 +42,11 @@ function getInitials(name: string): string {
 
 function ClientsPage() {
   const { data: workspace } = useCurrentWorkspace();
-  const { data: clients = [], isLoading } = useClients(workspace?.workspaceId);
+  const { data: clients = [], isLoading: isLoadingClients } = useClients(workspace?.workspaceId);
+  const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
   const createClient = useCreateClient();
+
+  const isLoading = isLoadingClients || isLoadingMembers;
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [name, setName] = useState("");
@@ -52,6 +55,9 @@ function ClientsPage() {
   const [status, setStatus] = useState("Planning");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Workspace members with role 'client'
+  const clientMembers = members.filter((m) => m.role === "client");
 
   const togglePlatform = (p: string) => {
     setSelectedPlatforms(prev =>
@@ -90,6 +96,13 @@ function ClientsPage() {
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const filteredMembers = clientMembers.filter((m) => {
+    const name = m.users?.full_name || m.users?.email?.split("@")[0] || "";
+    const email = m.users?.email || "";
+    const q = searchTerm.toLowerCase();
+    return name.toLowerCase().includes(q) || email.toLowerCase().includes(q);
+  });
 
   return (
     <AppShell
@@ -186,41 +199,95 @@ function ClientsPage() {
             <tbody>
               {isLoading ? (
                 <tr><td colSpan={5} className="text-center py-20"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : filteredClients.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-20 text-muted-foreground">No clients found. Click 'Add Client' to add your first one!</td></tr>
               ) : (
-                filteredClients.map((c) => (
-                  <tr key={c.id} className="border-t border-border hover:bg-muted/40 transition-colors">
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-9 w-9 shrink-0 rounded-xl grid place-items-center text-white text-xs font-semibold" style={{ background: getClientAvatarColor(c.name) }}>
-                          {getInitials(c.name)}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-semibold truncate">{c.name}</div>
-                          <div className="text-xs text-muted-foreground truncate">{c.email || "No email provided"}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-foreground/80">{c.industry || "-"}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex -space-x-1">
-                        {c.platforms?.map((p) => (
-                          <span key={p} title={p} className="h-6 w-6 rounded-full ring-2 ring-white grid place-items-center text-[10px] font-bold text-white" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || '#666' }}>
-                            {p[0]}
-                          </span>
-                        ))}
-                        {(!c.platforms || c.platforms.length === 0) && <span className="text-muted-foreground">-</span>}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <Badge className={`rounded-full font-medium border-0 ${STATUS_TONE[c.status] || STATUS_TONE.Planning}`}>{c.status}</Badge>
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
-                    </td>
-                  </tr>
-                ))
+                <>
+                  {/* ── Business Clients (from clients table) ── */}
+                  {filteredClients.length === 0 && filteredMembers.length === 0 ? (
+                    <tr><td colSpan={5} className="text-center py-20 text-muted-foreground">No clients found. Click 'Add Client' to add your first one!</td></tr>
+                  ) : (
+                    filteredClients.map((c) => (
+                      <tr key={c.id} className="border-t border-border hover:bg-muted/40 transition-colors">
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="h-9 w-9 shrink-0 rounded-xl grid place-items-center text-white text-xs font-semibold" style={{ background: getClientAvatarColor(c.name) }}>
+                              {getInitials(c.name)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold truncate">{c.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{c.email || "No email provided"}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-foreground/80">{c.industry || "-"}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex -space-x-1">
+                            {c.platforms?.map((p) => (
+                              <span key={p} title={p} className="h-6 w-6 rounded-full ring-2 ring-white grid place-items-center text-[10px] font-bold text-white" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || '#666' }}>
+                                {p[0]}
+                              </span>
+                            ))}
+                            {(!c.platforms || c.platforms.length === 0) && <span className="text-muted-foreground">-</span>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <Badge className={`rounded-full font-medium border-0 ${STATUS_TONE[c.status] || STATUS_TONE.Planning}`}>{c.status}</Badge>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+
+                  {/* ── Client Members (from workspace_members with role='client') ── */}
+                  {filteredMembers.length > 0 && (
+                    <>
+                      <tr>
+                        <td colSpan={5} className="px-3 pt-5 pb-2">
+                          <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">
+                            <Users className="h-3.5 w-3.5" />
+                            Client Members (Workspace)
+                          </div>
+                        </td>
+                      </tr>
+                      {filteredMembers.map((m) => {
+                        const displayName = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                        const displayEmail = m.users?.email || "—";
+                        return (
+                          <tr key={m.user_id} className="border-t border-border hover:bg-muted/40 transition-colors">
+                            <td className="px-3 py-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div
+                                  className="h-9 w-9 shrink-0 rounded-xl grid place-items-center text-white text-xs font-semibold"
+                                  style={{ background: getClientAvatarColor(displayName) }}
+                                >
+                                  {getInitials(displayName)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-semibold truncate flex items-center gap-2">
+                                    {displayName}
+                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 leading-none">
+                                      Workspace Client
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground truncate">{displayEmail}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 text-muted-foreground text-xs">—</td>
+                            <td className="px-3 py-3 text-muted-foreground text-xs">—</td>
+                            <td className="px-3 py-3">
+                              <Badge className="rounded-full font-medium border-0 bg-emerald-50 text-emerald-700">Active</Badge>
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </>
+                  )}
+                </>
               )}
             </tbody>
           </table>

@@ -1,21 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, MoreHorizontal } from "lucide-react";
-import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage } from "@/lib/queries";
+import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical } from "lucide-react";
+import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useClients } from "@/lib/queries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/deals")({
   head: () => ({ meta: [{ title: "Deals — SocialNxt CRM" }] }),
@@ -35,17 +28,30 @@ const STAGE_COLOR: Record<string, string> = {
 function DealsPage() {
   const { data: workspace } = useCurrentWorkspace();
   const { data: deals = [], isLoading } = useDeals(workspace?.workspaceId);
+  const { data: clients = [] } = useClients(workspace?.workspaceId);
   const createDeal = useCreateDeal();
   const updateStage = useUpdateDealStage();
+  const deleteDeal = useDeleteDeal();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [clientName, setClientName] = useState("");
   const [projectName, setProjectName] = useState("");
   const [amount, setAmount] = useState("");
   const [days, setDays] = useState("");
+
+  // Drag state
+  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const dragCardId = useRef<string | null>(null);
+  const dragFromStage = useRef<string | null>(null);
+
   const isClient = workspace?.role === "client";
+  const canEdit = !isClient;
+
   const visibleDeals = isClient
-    ? deals.filter((d) => d.client_name?.toLowerCase() === workspace?.userEmail?.split("@")[0]?.toLowerCase() || d.client_name?.toLowerCase() === workspace?.userFullName?.toLowerCase())
+    ? deals.filter((d) =>
+        d.client_name?.toLowerCase() === workspace?.userEmail?.split("@")[0]?.toLowerCase() ||
+        d.client_name?.toLowerCase() === workspace?.userFullName?.toLowerCase()
+      )
     : deals;
 
   const handleCreateDeal = async (e: React.FormEvent) => {
@@ -72,12 +78,59 @@ function DealsPage() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this deal? This cannot be undone.")) return;
+    try {
+      await deleteDeal.mutateAsync({ id });
+      toast.success("Deal deleted.");
+    } catch (err: any) {
+      toast.error("Failed to delete: " + err.message);
+    }
+  };
+
+  // ── Drag handlers ──
+  const handleDragStart = (e: React.DragEvent, dealId: string, stage: string) => {
+    dragCardId.current = dealId;
+    dragFromStage.current = stage;
+    e.dataTransfer.effectAllowed = "move";
+    // Ghost image will be the card itself via browser default
+  };
+
+  const handleDragOver = (e: React.DragEvent, stage: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverStage(stage);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetStage: string) => {
+    e.preventDefault();
+    setDragOverStage(null);
+    const id = dragCardId.current;
+    const fromStage = dragFromStage.current;
+    if (!id || fromStage === targetStage) return;
+    updateStage.mutate(
+      { id, stage: targetStage },
+      {
+        onSuccess: () => toast.success(`Moved to ${targetStage}`),
+        onError: (err: any) => toast.error(err.message),
+      }
+    );
+    dragCardId.current = null;
+    dragFromStage.current = null;
+  };
+
+  const handleDragEnd = () => {
+    setDragOverStage(null);
+    dragCardId.current = null;
+    dragFromStage.current = null;
+  };
+
   return (
     <AppShell
       title="Deals"
       subtitle="Kanban view of every active project across stages."
       actions={
-        !isClient && (
+        canEdit && (
           <Button onClick={() => setIsDialogOpen(true)} className="rounded-xl h-10">
             <Plus className="h-4 w-4 mr-2" /> Add Deal
           </Button>
@@ -89,8 +142,19 @@ function DealsPage() {
           {STAGES.map((stage) => {
             const items = visibleDeals.filter((d) => d.stage === stage);
             const total = items.reduce((s, d) => s + d.amount, 0);
+            const isOver = dragOverStage === stage;
+
             return (
-              <div key={stage} className="bg-muted/40 rounded-2xl p-3">
+              <div
+                key={stage}
+                className={`rounded-2xl p-3 transition-colors ${
+                  isOver ? "bg-primary/5 ring-2 ring-primary/30" : "bg-muted/40"
+                }`}
+                onDragOver={canEdit ? (e) => handleDragOver(e, stage) : undefined}
+                onDrop={canEdit ? (e) => handleDrop(e, stage) : undefined}
+                onDragLeave={() => setDragOverStage(null)}
+              >
+                {/* Column header */}
                 <div className="flex items-center justify-between px-2 mb-3">
                   <div className="flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: STAGE_COLOR[stage] }} />
@@ -99,37 +163,51 @@ function DealsPage() {
                   </div>
                   <span className="text-[11px] text-muted-foreground">₹{(total / 1000).toFixed(0)}k</span>
                 </div>
+
+                {/* Drop zone hint */}
+                {isOver && items.length === 0 && (
+                  <div className="mb-2 border-2 border-dashed border-primary/40 rounded-xl h-16 flex items-center justify-center text-xs text-primary/60">
+                    Drop here
+                  </div>
+                )}
+
+                {/* Deal cards */}
                 <div className="space-y-2.5">
                   {items.map((d) => {
                     const ownerName = d.users?.full_name || d.users?.email?.split("@")[0] || "Unknown";
                     return (
-                      <div key={d.id} className="card-soft p-3.5 relative lift">
-                        <div className="flex justify-between items-start">
-                          <div className="text-xs text-muted-foreground truncate pr-6">{d.client_name}</div>
-                          
-                          {!isClient && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button className="absolute top-2 right-2 p-1 rounded-full hover:bg-muted text-muted-foreground transition-colors">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Move to stage</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                {STAGES.filter(s => s !== stage).map((s) => (
-                                  <DropdownMenuItem 
-                                    key={s} 
-                                    onClick={() => updateStage.mutate({ id: d.id, stage: s })}
-                                  >
-                                    {s}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
+                      <div
+                        key={d.id}
+                        draggable={canEdit}
+                        onDragStart={canEdit ? (e) => handleDragStart(e, d.id, stage) : undefined}
+                        onDragEnd={canEdit ? handleDragEnd : undefined}
+                        className={`card-soft p-3.5 relative group transition-all ${
+                          canEdit ? "cursor-grab active:cursor-grabbing active:opacity-60 active:scale-95" : ""
+                        }`}
+                        style={{
+                          borderTop: `3px solid ${STAGE_COLOR[stage]}`,
+                        }}
+                      >
+                        {/* Drag handle + client name row */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {canEdit && (
+                              <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 group-hover:text-muted-foreground transition-colors" />
+                            )}
+                            <div className="text-xs text-muted-foreground truncate">{d.client_name}</div>
+                          </div>
 
+                          {canEdit && (
+                            <button
+                              onClick={() => handleDelete(d.id)}
+                              className="p-1 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                              title="Delete deal"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
+
                         <div className="font-semibold text-sm mt-0.5 leading-snug">{d.project_name}</div>
                         <div className="mt-3 flex items-center gap-1 text-sm font-semibold text-primary">
                           <IndianRupee className="h-3.5 w-3.5" />
@@ -142,8 +220,21 @@ function DealsPage() {
                       </div>
                     );
                   })}
-                  {!isClient && (
-                    <button onClick={() => setIsDialogOpen(true)} className="w-full text-xs text-muted-foreground hover:text-primary py-2 rounded-xl border border-dashed border-border hover:border-primary/40 transition-colors">+ Add deal</button>
+
+                  {/* Drop zone hint when column has cards */}
+                  {isOver && items.length > 0 && (
+                    <div className="border-2 border-dashed border-primary/40 rounded-xl h-10 flex items-center justify-center text-xs text-primary/60">
+                      Drop here
+                    </div>
+                  )}
+
+                  {canEdit && (
+                    <button
+                      onClick={() => setIsDialogOpen(true)}
+                      className="w-full text-xs text-muted-foreground hover:text-primary py-2 rounded-xl border border-dashed border-border hover:border-primary/40 transition-colors"
+                    >
+                      + Add deal
+                    </button>
                   )}
                 </div>
               </div>
@@ -152,6 +243,7 @@ function DealsPage() {
         </div>
       </div>
 
+      {/* Add Deal Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -161,7 +253,16 @@ function DealsPage() {
           <form onSubmit={handleCreateDeal} className="space-y-4 pt-2">
             <div className="space-y-2">
               <Label>Client Name</Label>
-              <Input value={clientName} onChange={(e) => setClientName(e.target.value)} required placeholder="e.g. Acme Corp" />
+              <Select value={clientName} onValueChange={setClientName} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a client..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Type of Work / Project Name</Label>

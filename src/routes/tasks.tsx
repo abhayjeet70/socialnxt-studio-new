@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { AppShell } from "@/components/app-shell";
 import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers } from "@/lib/queries";
 import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2 } from "lucide-react";
@@ -45,6 +45,13 @@ function TasksPage() {
 
   const isClient = workspace?.role === "client";
   const clientNameForFilter = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
+
+  const clientNamesSet = new Set(clients.map(c => c.name));
+  members.filter(m => m.role === 'client').forEach(m => {
+    const name = m.users?.full_name || m.users?.email?.split('@')[0];
+    if (name) clientNamesSet.add(name);
+  });
+  const allClientNames = Array.from(clientNamesSet).sort();
 
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>("All Clients");
   const [selectedPlatformFilter, setSelectedPlatformFilter] = useState<string>("All Platforms");
@@ -129,8 +136,8 @@ function TasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="All Clients">All Clients</SelectItem>
-                  {clients.map(c => (
-                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  {allClientNames.map(name => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -167,7 +174,7 @@ function TasksPage() {
               </thead>
               <tbody>
                 {sortedPosts.map((post, idx) => (
-                  <TaskRow key={post.id} post={post} index={idx} isClient={isClient} clients={clients} members={members} />
+                  <TaskRow key={post.id} post={post} index={idx} isClient={isClient} allClientNames={allClientNames} members={members} />
                 ))}
                 {sortedPosts.length === 0 && (
                   <tr>
@@ -186,7 +193,7 @@ function TasksPage() {
 }
 
 // Separate component for each row so they manage their own local edit state
-function TaskRow({ post, index, isClient, clients, members }: { post: Post; index: number; isClient?: boolean; clients: Client[]; members: any[] }) {
+function TaskRow({ post, index, isClient, allClientNames, members }: { post: Post; index: number; isClient?: boolean; allClientNames: string[]; members: any[] }) {
   const { data: workspace } = useCurrentWorkspace();
   const updatePost = useUpdatePostDetails();
   const updateStatus = useUpdatePostStatus();
@@ -292,8 +299,8 @@ function TaskRow({ post, index, isClient, clients, members }: { post: Post; inde
           className="w-full px-3 py-3 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm cursor-pointer appearance-none disabled:opacity-50"
         >
           <option value="" disabled>Select Client</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.name}>{c.name}</option>
+          {allClientNames.map((name) => (
+            <option key={name} value={name}>{name}</option>
           ))}
         </select>
       </td>
@@ -374,27 +381,14 @@ function TaskRow({ post, index, isClient, clients, members }: { post: Post; inde
         </div>
       </td>
 
-      {/* ASSIGNED TO */}
+      {/* ASSIGNED TO — multi-select */}
       <td className="p-0 border-r border-gray-200 align-top bg-transparent">
-        <div className="p-2">
-          <Select
-            value={post.assigned_to || ""}
-            onValueChange={(val) => updatePost.mutate({ id: post.id, updates: { assigned_to: val } })}
-            disabled={isClient}
-          >
-            <SelectTrigger className="h-9 w-full bg-transparent border-transparent hover:border-input text-xs">
-              <SelectValue placeholder="Unassigned" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="unassigned" disabled className="hidden">Unassigned</SelectItem>
-              {members.filter(m => m.role === "employee" || m.role === "admin").map((m) => (
-                <SelectItem key={m.user_id} value={m.user_id}>
-                  {m.users?.full_name || m.users?.email?.split('@')[0]} ({m.role})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <AssignedToCell
+          post={post}
+          members={members}
+          isClient={isClient}
+          onUpdate={(ids) => updatePost.mutate({ id: post.id, updates: { assigned_to: ids } })}
+        />
       </td>
 
       {/* STATUS */}
@@ -507,3 +501,155 @@ function TaskRow({ post, index, isClient, clients, members }: { post: Post; inde
     </tr>
   );
 }
+
+// ── Multi-select Assigned To cell ──────────────────────────────────────────
+function AssignedToCell({
+  post,
+  members,
+  isClient,
+  onUpdate,
+}: {
+  post: Post;
+  members: any[];
+  isClient?: boolean;
+  onUpdate: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // ── Local state for immediate checkbox feedback ──
+  // post.assigned_to is now a string[] from Supabase text[] column
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => post.assigned_to ?? []);
+
+  // Sync from prop when Supabase refetch arrives
+  useEffect(() => {
+    setSelectedIds(post.assigned_to ?? []);
+  }, [post.assigned_to]);
+
+  const eligibleMembers = members.filter((m) => m.role === "employee" || m.role === "admin");
+
+  const getMemberName = (userId: string) => {
+    const m = eligibleMembers.find((m) => m.user_id === userId);
+    return m ? (m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown") : "Unknown";
+  };
+
+  const getInitials = (name: string) =>
+    name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+
+  const toggleMember = (userId: string) => {
+    // Update local state immediately for instant UI feedback
+    const next = selectedIds.includes(userId)
+      ? selectedIds.filter((id) => id !== userId)
+      : [...selectedIds, userId];
+    setSelectedIds(next);
+    onUpdate(next); // persist to Supabase in background
+  };
+
+  // Click outside to close — proper useEffect with cleanup
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const isCollab = selectedIds.length > 1;
+
+  return (
+    <div ref={ref} className="relative p-2">
+      {/* Trigger button */}
+      <button
+        onClick={() => !isClient && setOpen((o) => !o)}
+        disabled={isClient}
+        className={`w-full min-h-[36px] flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left text-xs transition-colors
+          ${isClient ? "opacity-60 cursor-default border-transparent" : "border-transparent hover:border-input hover:bg-white/60 cursor-pointer"}`}
+      >
+        {selectedIds.length === 0 ? (
+          <span className="text-muted-foreground">Unassigned</span>
+        ) : isCollab ? (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Stacked avatars */}
+            <div className="flex -space-x-1.5">
+              {selectedIds.slice(0, 3).map((id) => {
+                const name = getMemberName(id);
+                return (
+                  <span
+                    key={id}
+                    title={name}
+                    className="h-6 w-6 rounded-full bg-violet-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white"
+                  >
+                    {getInitials(name)}
+                  </span>
+                );
+              })}
+              {selectedIds.length > 3 && (
+                <span className="h-6 w-6 rounded-full bg-muted text-muted-foreground text-[9px] font-bold flex items-center justify-center ring-2 ring-white">
+                  +{selectedIds.length - 3}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-semibold text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded-full">
+              Collab
+            </span>
+          </div>
+        ) : (
+          <span className="font-medium truncate">{getMemberName(selectedIds[0])}</span>
+        )}
+        {!isClient && <span className="ml-auto text-muted-foreground text-[10px]">▾</span>}
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-52 bg-white rounded-xl shadow-xl border border-border overflow-hidden">
+          <div className="px-3 py-2 border-b border-border text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Select employees
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {eligibleMembers.map((m) => {
+              const name = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+              const checked = selectedIds.includes(m.user_id);
+              return (
+                <label
+                  key={m.user_id}
+                  className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleMember(m.user_id)}
+                    className="accent-violet-600 h-3.5 w-3.5 rounded"
+                  />
+                  <span
+                    className="h-6 w-6 rounded-full text-white text-[9px] font-bold flex items-center justify-center shrink-0"
+                    style={{ background: checked ? "#7c3aed" : "#94a3b8" }}
+                  >
+                    {getInitials(name)}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium truncate">{name}</div>
+                    <div className="text-[10px] text-muted-foreground capitalize">{m.role}</div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          {selectedIds.length > 0 && (
+            <div className="px-3 py-2 border-t border-border">
+              <button
+                onClick={() => onUpdate([])}
+                className="text-[10px] text-red-500 hover:underline"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+

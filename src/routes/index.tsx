@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,12 +37,28 @@ export const Route = createFileRoute("/")({
 
 function Dashboard() {
   const { data: workspace, isLoading: workspaceLoading } = useCurrentWorkspace();
+  const navigate = useNavigate();
   const stats = useDashboardStats(workspace?.workspaceId);
   const { data: revenueData = [] } = useRevenueGraph(workspace?.workspaceId);
-  const { data: allPosts = [] } = usePosts(workspace?.workspaceId);
-  const { data: clients = [] } = useClients(workspace?.workspaceId);
+  const { data: allPostsRaw = [] } = usePosts(workspace?.workspaceId);
+  const { data: clientsRaw = [] } = useClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
-  const { data: allMeetings = [] } = useMeetings(workspace?.workspaceId);
+  const { data: allMeetingsRaw = [] } = useMeetings(workspace?.workspaceId);
+
+  const isClient = workspace?.role === "client";
+  const clientName = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
+
+  const allPosts = isClient 
+    ? allPostsRaw.filter(p => p.client_name?.toLowerCase() === clientName.toLowerCase())
+    : allPostsRaw;
+
+  const allMeetings = isClient
+    ? allMeetingsRaw.filter((m) => (m as any).client_id === workspace?.userId)
+    : allMeetingsRaw;
+
+  const clients = isClient
+    ? clientsRaw.filter((c) => c.name.toLowerCase() === clientName.toLowerCase())
+    : clientsRaw;
 
   // ─── Platform Distribution (real) ───────────────────────────────────────────
   const platformCounts: Record<string, number> = {};
@@ -67,11 +83,14 @@ function Dashboard() {
   const bgColors = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#3b82f6"];
 
   // ─── Team Workload (real) ────────────────────────────────────────────────────
-  const liveTeamWorkload = members
-    .filter((m) => m.role === "employee" || m.role === "admin")
+  // Count posts where this employee appears in the assigned_to array
+  const employeeMembers = members.filter((m) => m.role === "employee" || m.role === "admin");
+  const liveTeamWorkload = employeeMembers
     .map((m) => ({
       name: (m.users?.full_name || m.users?.email || "Unknown").split(" ")[0],
-      tasks: allPosts.filter((p) => p.assigned_to === m.user_id).length,
+      tasks: allPosts.filter((p) =>
+        Array.isArray(p.assigned_to) && p.assigned_to.includes(m.user_id)
+      ).length,
     }))
     .filter((e) => e.tasks > 0);
 
@@ -89,8 +108,9 @@ function Dashboard() {
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
     .slice(0, 5)
     .map((p) => {
-      const assignedMember = members.find((m) => m.user_id === p.assigned_to);
-      const who = assignedMember?.users?.full_name || assignedMember?.users?.email?.split("@")[0] || "Someone";
+      // Look up author by author_id for accurate "who did this" name
+      const authorMember = members.find((m) => m.user_id === p.author_id);
+      const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
       const action = p.status === "published" ? "marked as posted" : p.status === "approved" ? "approved" : p.status === "pending_approval" ? "submitted for approval" : "updated";
       const diffMs = Date.now() - new Date(p.updated_at).getTime();
       const diffH = Math.floor(diffMs / 3600000);
@@ -246,7 +266,6 @@ function Dashboard() {
         <div className="card-soft p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm font-semibold">Content Progress</div>
-            <button className="text-xs text-primary font-medium hover:underline">View all</button>
           </div>
           <div className="space-y-4">
             {liveContentProgress.length === 0 ? (
@@ -269,7 +288,6 @@ function Dashboard() {
         <div className="card-soft p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm font-semibold">Team Workload</div>
-            <button className="text-xs text-primary font-medium hover:underline">Manage</button>
           </div>
           <div className="h-64">
             {liveTeamWorkload.length === 0 ? (
@@ -296,15 +314,15 @@ function Dashboard() {
         <div className="card-soft p-5">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Today's Tasks</div>
-            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="space-y-3">
             {todaysTasks.length === 0 ? (
               <div className="text-xs text-muted-foreground">No tasks scheduled for today.</div>
             ) : todaysTasks.map((t) => {
               const statusColor = t.status === "pending_approval" ? "bg-[#F59E0B]" : t.status === "draft" ? "bg-[#9CA3AF]" : "bg-[#10B981]";
-              const assignedMember = members.find((m) => m.user_id === t.assigned_to);
-              const assigneeName = assignedMember?.users?.full_name || assignedMember?.users?.email?.split("@")[0] || "Unassigned";
+              const isCollab = Array.isArray(t.assigned_to) && t.assigned_to.length > 1;
+              const assignedMember = members.find((m) => Array.isArray(t.assigned_to) ? t.assigned_to.includes(m.user_id) : m.user_id === (t.assigned_to as any));
+              const assigneeName = isCollab ? "Collab" : (assignedMember?.users?.full_name || assignedMember?.users?.email?.split("@")[0] || "Unassigned");
               return (
                 <div key={t.id} className="flex items-start gap-3">
                   <div className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${statusColor}`} />
@@ -324,7 +342,13 @@ function Dashboard() {
         <div className="card-soft p-5">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Recent Activities</div>
-            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+            <button
+              onClick={() => navigate({ to: "/activity-logs" })}
+              className="h-7 w-7 rounded-lg bg-muted hover:bg-primary/10 hover:text-primary flex items-center justify-center transition-colors"
+              title="View full Activity Logs"
+            >
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
           </div>
           <ol className="relative ml-2 border-l border-border space-y-4">
             {recentActivities.length === 0 ? (
@@ -342,7 +366,13 @@ function Dashboard() {
         <div className="card-soft p-5">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Upcoming Meetings</div>
-            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+            <button
+              onClick={() => navigate({ to: "/meetings" })}
+              className="h-7 w-7 rounded-lg bg-muted hover:bg-primary/10 hover:text-primary flex items-center justify-center transition-colors"
+              title="Go to Meetings"
+            >
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
           </div>
           <div className="space-y-3">
             {upcomingMeetings.length === 0 ? (

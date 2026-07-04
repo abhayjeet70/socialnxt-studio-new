@@ -62,8 +62,8 @@ function ReportsPage() {
   const teamProductivity = members
     .filter((m) => m.role === "employee" || m.role === "admin")
     .map((m) => {
-      const assigned = posts.filter((p) => p.assigned_to === m.user_id).length;
-      const published = posts.filter((p) => p.assigned_to === m.user_id && p.status === "published").length;
+      const assigned = posts.filter((p) => Array.isArray(p.assigned_to) ? p.assigned_to.includes(m.user_id) : p.assigned_to === (m.user_id as any)).length;
+      const published = posts.filter((p) => (Array.isArray(p.assigned_to) ? p.assigned_to.includes(m.user_id) : p.assigned_to === (m.user_id as any)) && p.status === "published").length;
       const pct = assigned > 0 ? Math.round((published / assigned) * 100) : 0;
       return {
         name: m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown",

@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Plus, Video, Calendar as CalIcon, Loader2 } from "lucide-react";
+import { Plus, Video, Calendar as CalIcon, Loader2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useCurrentWorkspace, useMeetings, useCreateMeeting, useWorkspaceMembers } from "@/lib/queries";
+import { useCurrentWorkspace, useMeetings, useCreateMeeting, useDeleteMeeting, useWorkspaceMembers } from "@/lib/queries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ function MeetingsPage() {
   const { data: allMeetings = [], isLoading } = useMeetings(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const createMeeting = useCreateMeeting();
+  const deleteMeeting = useDeleteMeeting();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [agenda, setAgenda] = useState("");
@@ -28,6 +29,7 @@ function MeetingsPage() {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [clientId, setClientId] = useState<string>("none");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const isClient = workspace?.role === "client";
   const canCreate = workspace?.role === "admin" || workspace?.role === "employee";
@@ -48,7 +50,6 @@ function MeetingsPage() {
     e.preventDefault();
     if (!workspace) return;
     
-    // Combine date and time
     const scheduled_at = new Date(`${date}T${time}`).toISOString();
 
     try {
@@ -71,6 +72,19 @@ function MeetingsPage() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!workspace) return;
+    setDeletingId(id);
+    try {
+      await deleteMeeting.mutateAsync({ id, workspace_id: workspace.workspaceId });
+      toast.success("Meeting deleted.");
+    } catch (err: any) {
+      toast.error("Failed to delete: " + err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <AppShell
       title="Meetings"
@@ -85,6 +99,7 @@ function MeetingsPage() {
     >
       <div className="grid grid-cols-1 gap-4 max-w-5xl">
         <div className="space-y-6">
+          {/* ── Upcoming ── */}
           <section>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold">Upcoming meetings</h2>
@@ -99,9 +114,10 @@ function MeetingsPage() {
                 const displayDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 const displayTime = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
                 const organizer = m.users?.full_name || m.users?.email?.split('@')[0] || "Unknown";
+                const isDeleting = deletingId === m.id;
 
                 return (
-                  <div key={m.id} className="card-soft lift p-5">
+                  <div key={m.id} className="card-soft lift p-5 relative">
                     <div className="flex items-start gap-3">
                       <div className="h-11 w-11 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
                         <Video className="h-5 w-5" />
@@ -110,7 +126,7 @@ function MeetingsPage() {
                         <div className="font-semibold truncate">{m.agenda}</div>
                         <div className="text-xs text-muted-foreground truncate">Scheduled by {organizer}</div>
                       </div>
-                      <Badge className="rounded-full bg-primary/10 text-primary border-0">Upcoming</Badge>
+                      <Badge className="rounded-full bg-primary/10 text-primary border-0 shrink-0">Upcoming</Badge>
                     </div>
                     <div className="mt-4 flex items-center gap-4 text-xs text-foreground/70">
                       <span className="flex items-center gap-1.5"><CalIcon className="h-3.5 w-3.5" /> {displayDate}</span>
@@ -120,6 +136,18 @@ function MeetingsPage() {
                       <Button onClick={() => window.open(m.meet_link, "_blank")} className="rounded-xl h-9 flex-1">
                         Join Meeting
                       </Button>
+                      {canCreate && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="rounded-xl h-9 w-9 text-red-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 shrink-0"
+                          onClick={() => handleDelete(m.id)}
+                          disabled={isDeleting}
+                          title="Delete meeting"
+                        >
+                          {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
@@ -127,6 +155,7 @@ function MeetingsPage() {
             </div>
           </section>
 
+          {/* ── Completed ── */}
           <section>
             <h2 className="text-sm font-semibold mb-3">Completed meetings</h2>
             <div className="card-soft divide-y divide-border">
@@ -136,9 +165,10 @@ function MeetingsPage() {
               {completed.map((m) => {
                 const dateObj = new Date(m.scheduled_at);
                 const displayDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                const isDeleting = deletingId === m.id;
                 
                 return (
-                  <div key={m.id} className="p-4 flex items-center gap-3">
+                  <div key={m.id} className="p-4 flex items-center gap-3 group">
                     <div className="h-9 w-9 rounded-xl bg-muted grid place-items-center text-muted-foreground shrink-0">
                       <Video className="h-4 w-4" />
                     </div>
@@ -146,7 +176,17 @@ function MeetingsPage() {
                       <div className="text-sm font-medium truncate">{m.agenda}</div>
                       <div className="text-xs text-muted-foreground truncate">{displayDate}</div>
                     </div>
-                    <Badge className="rounded-full bg-[#10B981]/10 text-[#047857] border-0">Completed</Badge>
+                    <Badge className="rounded-full bg-[#10B981]/10 text-[#047857] border-0 shrink-0">Completed</Badge>
+                    {canCreate && (
+                      <button
+                        onClick={() => handleDelete(m.id)}
+                        disabled={isDeleting}
+                        className="ml-1 p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Delete meeting"
+                      >
+                        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
                   </div>
                 );
               })}

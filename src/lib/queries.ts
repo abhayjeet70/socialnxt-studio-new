@@ -18,7 +18,7 @@ export type Post = {
   status: "draft" | "pending_approval" | "approved" | "scheduled" | "published" | "failed";
   scheduled_for: string | null;
   published_at: string | null;
-  assigned_to?: string | null;
+  assigned_to?: string[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -330,6 +330,20 @@ export function useCreateMeeting() {
   });
 }
 
+export function useDeleteMeeting() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, workspace_id }: { id: string; workspace_id: string }) => {
+      const { error } = await supabase.from("meetings").delete().eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["meetings", variables.workspace_id] });
+    },
+  });
+}
+
 // --------------------------------------------------------
 // DEALS
 // --------------------------------------------------------
@@ -376,6 +390,21 @@ export function useUpdateDealStage() {
         .from("deals")
         .update(updates)
         .eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["deals"] });
+      queryClient.invalidateQueries({ queryKey: ["revenue_graph"] });
+    },
+  });
+}
+
+export function useDeleteDeal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const { error } = await supabase.from("deals").delete().eq("id", id);
       if (error) throw error;
       return true;
     },
@@ -555,9 +584,19 @@ export type Proposal = {
   amount: number;
   status: "Draft" | "Sent" | "Approved" | "Rejected";
   notes: string | null;
+  pdf_url: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export async function uploadProposalPDF(file: File): Promise<string> {
+  const ext = file.name.split(".").pop();
+  const path = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from("proposal_pdfs").upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data } = supabase.storage.from("proposal_pdfs").getPublicUrl(path);
+  return data.publicUrl;
+}
 
 export function useProposals(workspaceId: string | undefined) {
   return useQuery({
@@ -600,7 +639,7 @@ export function useUpdateProposalStatus() {
         .eq("id", id);
       if (error) throw error;
 
-      // 2. If approved → create a Completed deal to update revenue graph
+      // 2. If approved → create a New deal so they can start work
       if (status === "Approved" && proposal) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
@@ -610,9 +649,8 @@ export function useUpdateProposalStatus() {
             project_name: proposal.title,
             amount: proposal.amount,
             days: "30",
-            stage: "Completed",
+            stage: "New",
             created_by: user.id,
-            completed_at: new Date().toISOString(),
           });
         }
       }
