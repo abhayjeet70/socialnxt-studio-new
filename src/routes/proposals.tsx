@@ -15,6 +15,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -157,16 +158,61 @@ function ProposalsPage() {
       })
     : proposals;
 
+  const handleBulkDownload = () => {
+    if (visibleProposals.length === 0) return toast.info("No proposals to download.");
+    
+    // Create a CSV of all proposals as the "Bulk Download"
+    const headers = "ID,Title,Client,Amount,Status,Created At\n";
+    const csv = visibleProposals.map(p => 
+      `${p.id},"${p.title}","${p.client_name}",${p.amount},${p.status},${p.created_at}`
+    ).join("\n");
+    const blob = new Blob([headers + csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `proposals-bulk-export.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Bulk download completed (CSV)");
+  };
+
+  const handleDownloadWord = (p: Proposal) => {
+    // Generate a simple mock Word document content
+    const content = `
+Proposal: ${p.title}
+Client: ${p.client_name}
+Amount: ₹${p.amount.toLocaleString("en-IN")}
+Status: ${p.status}
+Created: ${new Date(p.created_at).toLocaleDateString()}
+
+Notes:
+${p.notes || "No additional notes."}
+    `;
+    const blob = new Blob([content], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${p.title.replace(/\s+/g, '-').toLowerCase()}-proposal.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Downloaded as Word Document");
+  };
+
   return (
     <AppShell
       title="Proposals"
       subtitle="Send, track and manage client proposals end-to-end."
       actions={
-        canEdit ? (
-          <Button className="rounded-xl h-10" onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> New Proposal
+        <div className="flex items-center gap-2">
+          <Button variant="outline" className="rounded-xl h-10 border-border" onClick={handleBulkDownload}>
+            <Download className="h-4 w-4 mr-2" /> Bulk Download
           </Button>
-        ) : null
+          {canEdit && (
+            <Button className="rounded-xl h-10" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" /> New Proposal
+            </Button>
+          )}
+        </div>
       }
     >
       <div className="card-soft p-4 sm:p-5">
@@ -252,17 +298,33 @@ function ProposalsPage() {
                     {/* Actions */}
                     <td className="px-3 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        {/* Download PDF */}
-                        {p.pdf_url && (
-                          <a
-                            href={p.pdf_url}
-                            download
-                            title="Download PDF"
-                            className="h-8 w-8 rounded-lg hover:bg-muted grid place-items-center"
-                          >
-                            <Download className="h-4 w-4" />
-                          </a>
-                        )}
+                        {/* Download PDF/Word */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              title="Download Proposal"
+                              className="h-8 w-8 rounded-lg hover:bg-muted grid place-items-center text-muted-foreground transition-colors"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {p.pdf_url ? (
+                              <DropdownMenuItem asChild>
+                                <a href={p.pdf_url} download target="_blank" rel="noreferrer" className="cursor-pointer">
+                                  <FileText className="h-4 w-4 mr-2" /> Download as PDF
+                                </a>
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem disabled>
+                                <FileText className="h-4 w-4 mr-2" /> No PDF available
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem onClick={() => handleDownloadWord(p)} className="cursor-pointer">
+                              <FileText className="h-4 w-4 mr-2" /> Download as Word
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
 
                         {/* Client-only Approve button */}
                         {isClient && p.status === "Sent" && (

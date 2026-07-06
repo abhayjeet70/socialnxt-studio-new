@@ -4,9 +4,11 @@ import { usePosts, useCurrentWorkspace, useWorkspaceMembers, useDeals, usePropos
 import { useState, useMemo } from "react";
 import {
   UploadCloud, Link as LinkIcon, FileText, CheckCircle2,
-  Clock, User, Filter, Calendar, X, KanbanSquare,
+  Clock, User, Filter, Calendar, X, KanbanSquare, Download,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/activity-logs")({
   head: () => ({ meta: [{ title: "Activity Logs — SocialNxt CRM" }] }),
@@ -133,18 +135,37 @@ function ActivityLogsPage() {
     const dealEvents = filteredDeals.map((d) => {
       const authorMember = members.find((m) => m.user_id === d.created_by);
       const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
-      return {
+      
+      const events = [];
+      
+      events.push({
         ts: new Date(d.created_at || new Date()),
         who,
-        action: `moved deal to ${d.stage}`,
+        action: "created deal",
         subject: d.project_name || "Project",
         client: d.client_name || "",
         platform: "Deals",
         icon: KanbanSquare,
         color: "bg-[#8B5CF6]/10 text-[#6D28D9]",
         extra: `₹${d.amount?.toLocaleString("en-IN") || 0}`,
-      };
-    });
+      });
+
+      if (d.updated_at && d.updated_at !== d.created_at) {
+        events.push({
+          ts: new Date(d.updated_at),
+          who,
+          action: d.stage === "New" ? "updated deal details" : `moved deal to ${d.stage}`,
+          subject: d.project_name || "Project",
+          client: d.client_name || "",
+          platform: "Deals",
+          icon: KanbanSquare,
+          color: "bg-[#8B5CF6]/10 text-[#6D28D9]",
+          extra: `₹${d.amount?.toLocaleString("en-IN") || 0}`,
+        });
+      }
+
+      return events;
+    }).flat();
 
     // 3. Proposal Events
     const filteredProposals = isClient ? proposals.filter(p => p.client_name?.toLowerCase() === clientName.toLowerCase()) : proposals;
@@ -207,10 +228,48 @@ function ActivityLogsPage() {
     grouped[day].push(a);
   });
 
+  const handleExportCSV = () => {
+    if (filteredActivities.length === 0) return;
+    const headers = "Date,Time,Who,Action,Subject,Client,Platform,Details\n";
+    const csv = filteredActivities.map(a => {
+      const date = a.ts.toLocaleDateString("en-IN");
+      const time = a.ts.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+      return `"${date}","${time}","${a.who}","${a.action}","${a.subject}","${a.client}","${a.platform}","${a.extra}"`;
+    }).join("\n");
+    const blob = new Blob([headers + csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `activity-logs-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPDF = () => {
+    window.print();
+  };
+
   return (
     <AppShell
       title="Activity Logs"
       subtitle="A full timeline of every upload, link, and status change across all content."
+      actions={
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="rounded-xl h-10 border-border" disabled={filteredActivities.length === 0}>
+              <Download className="h-4 w-4 mr-2" /> Export Logs
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+              <FileText className="h-4 w-4 mr-2" /> Export as CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer">
+              <FileText className="h-4 w-4 mr-2" /> Export as PDF (Print)
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      }
     >
       {/* Filter strip */}
       <div className="flex flex-wrap items-center gap-2 mb-5">

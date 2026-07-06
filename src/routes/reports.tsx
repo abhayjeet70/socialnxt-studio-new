@@ -1,7 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Download, Calendar as CalIcon, Loader2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { Download, Calendar as CalIcon, Loader2, FileText, FileSpreadsheet } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line, PieChart, Pie, Cell,
 } from "recharts";
@@ -20,6 +28,9 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const BG_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#3b82f6", "#14b8a6"];
 
 function ReportsPage() {
+  const [dateRange, setDateRange] = useState("last6m");
+  const [customStartDate, setCustomStartDate] = useState<Date>();
+  const [customEndDate, setCustomEndDate] = useState<Date>();
   const { data: workspace } = useCurrentWorkspace();
   const { data: posts = [], isLoading: postsLoading } = usePosts(workspace?.workspaceId);
   const { data: clients = [], isLoading: clientsLoading } = useClients(workspace?.workspaceId);
@@ -91,14 +102,114 @@ function ReportsPage() {
     );
   }
 
+  // ─── Export Logic ────────────────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    if (posts.length === 0) return alert("No data to export");
+    const headers = "ID,Platform,Status,Assigned To,Scheduled For,Created At\n";
+    const csv = posts.map(p => 
+      `${p.id},${p.platform || (p.platforms ? p.platforms.join(";") : "")},${p.status},${Array.isArray(p.assigned_to) ? p.assigned_to.join(";") : p.assigned_to},${p.scheduled_for || ""},${p.created_at}`
+    ).join("\n");
+    const blob = new Blob([headers + csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `socialnxt-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPDF = () => {
+    window.print();
+  };
+
   return (
     <AppShell
-      title="Reports"
-      subtitle="Agency-wide performance, revenue and team productivity."
+      title="Reports & Analytics"
+      subtitle="Track your agency's performance and client growth."
       actions={
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="rounded-xl h-10"><CalIcon className="h-4 w-4" /> Last 6 months</Button>
-          <Button className="rounded-xl h-10"><Download className="h-4 w-4" /> Export Report</Button>
+          <Select value={dateRange} onValueChange={setDateRange}>
+            <SelectTrigger className="w-auto min-w-[180px] h-10 rounded-xl bg-background border-border">
+              <div className="flex items-center gap-2">
+                <CalIcon className="h-4 w-4" />
+                <SelectValue placeholder="Date Range" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="yesterday">Yesterday</SelectItem>
+              <SelectItem value="last7">Last 7 Days</SelectItem>
+              <SelectItem value="last30">Last 30 Days</SelectItem>
+              <SelectItem value="last6m">Last 6 months</SelectItem>
+              <SelectItem value="custom">Custom Date Range</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          {dateRange === "custom" && (
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-[140px] justify-start text-left font-normal rounded-xl h-10 bg-white",
+                      !customStartDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalIcon className="mr-2 h-4 w-4" />
+                    {customStartDate ? format(customStartDate, "PPP") : <span>Start date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customStartDate}
+                    onSelect={setCustomStartDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <span className="text-muted-foreground text-sm">to</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-[140px] justify-start text-left font-normal rounded-xl h-10 bg-white",
+                      !customEndDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalIcon className="mr-2 h-4 w-4" />
+                    {customEndDate ? format(customEndDate, "PPP") : <span>End date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customEndDate}
+                    onSelect={setCustomEndDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="rounded-xl h-10">
+                <Download className="h-4 w-4 mr-2" /> Export Report
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer">
+                <FileText className="h-4 w-4 mr-2" /> Export as PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+                <FileSpreadsheet className="h-4 w-4 mr-2" /> Export as CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       }
     >

@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Filter, MoreHorizontal, Loader2, Check, Users } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import { Plus, Search, Filter, MoreHorizontal, Loader2, Check, Users, Pencil, Trash2, Archive, Link } from "lucide-react";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
-import { useCurrentWorkspace, useClients, useCreateClient, useWorkspaceMembers } from "@/lib/queries";
+import { useCurrentWorkspace, useClients, useCreateClient, useUpdateClient, useDeleteClient, useWorkspaceMembers, type Client } from "@/lib/queries";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/clients")({
@@ -45,30 +46,50 @@ function ClientsPage() {
   const { data: clients = [], isLoading: isLoadingClients } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
   const createClient = useCreateClient();
+  const updateClient = useUpdateClient();
+  const deleteClient = useDeleteClient();
 
   const isLoading = isLoadingClients || isLoadingMembers;
+  const isAdmin = workspace?.role === "admin" || workspace?.role === "employee";
 
+  // ── Add state ──
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [industry, setIndustry] = useState("");
   const [status, setStatus] = useState("Planning");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+
+  // ── Edit state ──
+  const [editClient, setEditClient] = useState<Client | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editIndustry, setEditIndustry] = useState("");
+  const [editStatus, setEditStatus] = useState("Planning");
+  const [editPlatforms, setEditPlatforms] = useState<string[]>([]);
+
+  // ── Delete state ──
+  const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
+
+  // ── Close Client state ──
+  const [closeTarget, setCloseTarget] = useState<import("@/lib/queries").Client | null>(null);
+  const [closeReason, setCloseReason] = useState("");
+  const [isClosing, setIsClosing] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All Statuses");
+  const [platformFilter, setPlatformFilter] = useState("All Platforms");
 
   // Workspace members with role 'client'
   const clientMembers = members.filter((m) => m.role === "client");
 
-  const togglePlatform = (p: string) => {
-    setSelectedPlatforms(prev =>
-      prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
-    );
+  const togglePlatform = (p: string, arr: string[], setArr: (v: string[]) => void) => {
+    setArr(arr.includes(p) ? arr.filter(x => x !== p) : [...arr, p]);
   };
 
   const handleCreateClient = (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspace) return;
-    
     createClient.mutate({
       workspace_id: workspace.workspaceId,
       name,
@@ -80,28 +101,96 @@ function ClientsPage() {
       onSuccess: () => {
         toast.success("Client added successfully!");
         setIsAddOpen(false);
-        setName("");
-        setEmail("");
-        setIndustry("");
-        setSelectedPlatforms([]);
-        setStatus("Planning");
+        setName(""); setEmail(""); setIndustry(""); setSelectedPlatforms([]); setStatus("Planning");
       },
-      onError: (err) => {
-        toast.error(err.message);
-      }
+      onError: (err) => toast.error(err.message),
     });
   };
 
-  const filteredClients = clients.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const openEdit = (c: Client) => {
+    setEditClient(c);
+    setEditName(c.name);
+    setEditEmail(c.email ?? "");
+    setEditIndustry(c.industry ?? "");
+    setEditStatus(c.status);
+    setEditPlatforms(c.platforms ?? []);
+  };
+
+  const handleUpdateClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editClient || !workspace) return;
+    updateClient.mutate({
+      id: editClient.id,
+      workspace_id: workspace.workspaceId,
+      updates: {
+        name: editName,
+        email: editEmail || null,
+        industry: editIndustry || null,
+        platforms: editPlatforms,
+        status: editStatus,
+      },
+    }, {
+      onSuccess: () => {
+        toast.success("Client updated successfully!");
+        setEditClient(null);
+      },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  const handleDeleteClient = () => {
+    if (!deleteTarget || !workspace) return;
+    deleteClient.mutate({ id: deleteTarget.id, workspace_id: workspace.workspaceId }, {
+      onSuccess: () => {
+        toast.success("Client deleted.");
+        setDeleteTarget(null);
+      },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  const handleCloseClient = async () => {
+    if (!closeTarget || !workspace) return;
+    setIsClosing(true);
+    updateClient.mutate(
+      {
+        id: closeTarget.id,
+        workspace_id: workspace.workspaceId,
+        updates: {
+          status: "Closed",
+          closed_at: new Date().toISOString(),
+          close_reason: closeReason || null,
+        } as any,
+      },
+      {
+        onSuccess: () => {
+          toast.success(`${closeTarget.name} has been closed.`);
+          setCloseTarget(null);
+          setCloseReason("");
+        },
+        onError: (e) => toast.error("Failed: " + e.message),
+        onSettled: () => setIsClosing(false),
+      }
+    );
+  };
+
+  const filteredClients = clients.filter(c => {
+    if (c.status === "Closed") return false;  // Hide closed clients from main list
+    const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesStatus = statusFilter === "All Statuses" || c.status === statusFilter;
+    const matchesPlatform = platformFilter === "All Platforms" || (c.platforms && c.platforms.includes(platformFilter));
+    return matchesSearch && matchesStatus && matchesPlatform;
+  });
 
   const filteredMembers = clientMembers.filter((m) => {
-    const name = m.users?.full_name || m.users?.email?.split("@")[0] || "";
-    const email = m.users?.email || "";
+    const n = m.users?.full_name || m.users?.email?.split("@")[0] || "";
+    const em = m.users?.email || "";
     const q = searchTerm.toLowerCase();
-    return name.toLowerCase().includes(q) || email.toLowerCase().includes(q);
+    const matchesSearch = n.toLowerCase().includes(q) || em.toLowerCase().includes(q);
+    const matchesStatus = statusFilter === "All Statuses";
+    const matchesPlatform = platformFilter === "All Platforms";
+    return matchesSearch && matchesStatus && matchesPlatform;
   });
 
   return (
@@ -142,7 +231,7 @@ function ClientsPage() {
                         key={p}
                         variant="outline"
                         className={`cursor-pointer px-3 py-1 ${isSelected ? "border-primary bg-primary/10 text-primary" : ""}`}
-                        onClick={() => togglePlatform(p)}
+                        onClick={() => togglePlatform(p, selectedPlatforms, setSelectedPlatforms)}
                       >
                         {isSelected && <Check className="w-3 h-3 mr-1" />}
                         {p}
@@ -169,20 +258,114 @@ function ClientsPage() {
         </Dialog>
       }
     >
+      {/* ── Edit Client Dialog ── */}
+      <Dialog open={!!editClient} onOpenChange={(open) => !open && setEditClient(null)}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Edit Client</DialogTitle>
+            <DialogDescription>Update the client's details below.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateClient} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label>Client Name *</Label>
+              <Input required value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Acme Corp" />
+            </div>
+            <div className="space-y-2">
+              <Label>Contact Email</Label>
+              <Input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="hello@acme.com" />
+            </div>
+            <div className="space-y-2">
+              <Label>Industry</Label>
+              <Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} placeholder="e.g. Technology" />
+            </div>
+            <div className="space-y-2">
+              <Label>Active Platforms</Label>
+              <div className="flex flex-wrap gap-2">
+                {PLATFORMS.map((p) => {
+                  const isSelected = editPlatforms.includes(p);
+                  return (
+                    <Badge
+                      key={p}
+                      variant="outline"
+                      className={`cursor-pointer px-3 py-1 ${isSelected ? "border-primary bg-primary/10 text-primary" : ""}`}
+                      onClick={() => togglePlatform(p, editPlatforms, setEditPlatforms)}
+                    >
+                      {isSelected && <Check className="w-3 h-3 mr-1" />}
+                      {p}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={editStatus} onValueChange={setEditStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.keys(STATUS_TONE).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setEditClient(null)}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={updateClient.isPending}>
+                {updateClient.isPending ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Delete Client</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <span className="font-semibold">{deleteTarget?.name}</span>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteClient} disabled={deleteClient.isPending}>
+              {deleteClient.isPending ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="card-soft p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search clients..." 
+            <Input
+              placeholder="Search clients..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9 h-10 rounded-xl bg-muted/50 border-transparent" 
+              className="pl-9 h-10 rounded-xl bg-muted/50 border-transparent"
             />
           </div>
           <Button variant="outline" className="rounded-xl h-10"><Filter className="h-4 w-4" /> Filters</Button>
-          <Button variant="outline" className="rounded-xl h-10">All Statuses</Button>
-          <Button variant="outline" className="rounded-xl h-10">All Platforms</Button>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All Statuses">All Statuses</SelectItem>
+              {Object.keys(STATUS_TONE).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={platformFilter} onValueChange={setPlatformFilter}>
+            <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background">
+              <SelectValue placeholder="All Platforms" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All Platforms">All Platforms</SelectItem>
+              {PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="overflow-x-auto -mx-1">
@@ -201,7 +384,7 @@ function ClientsPage() {
                 <tr><td colSpan={5} className="text-center py-20"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
               ) : (
                 <>
-                  {/* ── Business Clients (from clients table) ── */}
+                  {/* ── Business Clients ── */}
                   {filteredClients.length === 0 && filteredMembers.length === 0 ? (
                     <tr><td colSpan={5} className="text-center py-20 text-muted-foreground">No clients found. Click 'Add Client' to add your first one!</td></tr>
                   ) : (
@@ -233,13 +416,42 @@ function ClientsPage() {
                           <Badge className={`rounded-full font-medium border-0 ${STATUS_TONE[c.status] || STATUS_TONE.Planning}`}>{c.status}</Badge>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                disabled={!isAdmin}
+                                onClick={() => openEdit(c)}
+                                className="gap-2"
+                              >
+                                <Pencil className="h-3.5 w-3.5" /> Edit Client
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={!isAdmin}
+                                onClick={() => setCloseTarget(c)}
+                                className="gap-2 text-[#F59E0B]"
+                              >
+                                <Archive className="h-3.5 w-3.5" /> Close Client
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                disabled={!isAdmin}
+                                className="text-red-600 gap-2"
+                                onClick={() => setDeleteTarget(c)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> Delete Client
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     ))
                   )}
 
-                  {/* ── Client Members (from workspace_members with role='client') ── */}
+                  {/* ── Client Members (workspace_members with role='client') ── */}
                   {filteredMembers.length > 0 && (
                     <>
                       <tr>
@@ -280,7 +492,17 @@ function ClientsPage() {
                               <Badge className="rounded-full font-medium border-0 bg-emerald-50 text-emerald-700">Active</Badge>
                             </td>
                             <td className="px-3 py-3 text-right">
-                              <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem>Edit Access</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-red-600">Remove Member</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </td>
                           </tr>
                         );
@@ -293,6 +515,34 @@ function ClientsPage() {
           </table>
         </div>
       </div>
+
+      {/* Close Client Dialog */}
+      <Dialog open={!!closeTarget} onOpenChange={(open) => !open && setCloseTarget(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Close Client</DialogTitle>
+            <DialogDescription>
+              This will move {closeTarget?.name} to the Closed Clients list.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>Reason for closing (Optional)</Label>
+            <Input
+              value={closeReason}
+              onChange={(e) => setCloseReason(e.target.value)}
+              placeholder="e.g. Contract ended, Project completed..."
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseTarget(null)} disabled={isClosing}>Cancel</Button>
+            <Button variant="default" onClick={handleCloseClient} disabled={isClosing}>
+              {isClosing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Archive className="h-4 w-4 mr-2" />}
+              Confirm Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

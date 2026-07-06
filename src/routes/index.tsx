@@ -1,19 +1,22 @@
+import { useState } from "react";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   Users, Briefcase, CalendarClock, Send, IndianRupee, CheckCircle2,
-  TrendingUp, ArrowUpRight, MoreHorizontal, Clock, Video,
+  TrendingUp, ArrowUpRight, MoreHorizontal, Clock, Video, Download,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, BarChart, Bar,
 } from "recharts";
 import { PLATFORM_COLOR } from "@/lib/demo-data";
 import { supabase } from "@/lib/supabase";
-import { useCurrentWorkspace, useDashboardStats, useRevenueGraph, usePosts, useClients, useWorkspaceMembers, useMeetings } from "@/lib/queries";
+import { useCurrentWorkspace, useDashboardStats, useRevenueGraph, usePosts, useClients, useWorkspaceMembers, useMeetings, useSocialAccounts } from "@/lib/queries";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "Dashboard — SocialNxt CRM" }] }),
@@ -38,12 +41,14 @@ export const Route = createFileRoute("/")({
 function Dashboard() {
   const { data: workspace, isLoading: workspaceLoading } = useCurrentWorkspace();
   const navigate = useNavigate();
+  const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const stats = useDashboardStats(workspace?.workspaceId);
   const { data: revenueData = [] } = useRevenueGraph(workspace?.workspaceId);
   const { data: allPostsRaw = [] } = usePosts(workspace?.workspaceId);
   const { data: clientsRaw = [] } = useClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: allMeetingsRaw = [] } = useMeetings(workspace?.workspaceId);
+  const { data: accounts = [] } = useSocialAccounts(workspace?.workspaceId);
 
   const isClient = workspace?.role === "client";
   const clientName = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
@@ -169,6 +174,74 @@ function Dashboard() {
     },
   ];
 
+  const getModalContent = () => {
+    if (!selectedMetric) return null;
+    
+    if (selectedMetric === "Connected Accounts") {
+      return accounts.length > 0 ? accounts.map(a => (
+        <div key={a.id} className="p-3 border-b flex justify-between items-center text-sm">
+          <span className="capitalize font-medium">{a.platform}</span>
+          <span className="text-muted-foreground">{a.account_name}</span>
+        </div>
+      )) : <div className="text-sm text-muted-foreground p-4">No data found.</div>;
+    }
+
+    let postsToShow: any[] = [];
+    if (selectedMetric === "Total Posts") postsToShow = allPosts;
+    else if (selectedMetric === "Scheduled") postsToShow = allPosts.filter(p => p.status === "scheduled");
+    else if (selectedMetric === "Posts Published") postsToShow = allPosts.filter(p => p.status === "published");
+    else if (selectedMetric === "Drafts") postsToShow = allPosts.filter(p => p.status === "draft");
+    else if (selectedMetric === "Pending Approvals") postsToShow = allPosts.filter(p => p.status === "pending_approval");
+
+    return postsToShow.length > 0 ? postsToShow.map(p => (
+      <div key={p.id} className="p-3 border-b text-sm">
+        <div className="flex justify-between items-start mb-1">
+          <span className="font-semibold">{p.topic || p.content_type || "Post"}</span>
+          <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+            {p.platform || "Any"}
+          </span>
+        </div>
+        <div className="text-muted-foreground truncate">{p.content || "No content"}</div>
+        <div className="text-xs mt-2 text-foreground/70">
+          {p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : p.created_at ? new Date(p.created_at).toLocaleString() : ""}
+        </div>
+      </div>
+    )) : <div className="text-sm text-muted-foreground p-4">No data found.</div>;
+  };
+
+  const handleExportMetric = () => {
+    if (!selectedMetric) return;
+    
+    let csv = "";
+    const headers = "ID,Name/Title,Detail,Date\n";
+    
+    if (selectedMetric === "Connected Accounts") {
+      csv = accounts.map(a => `${a.id},${a.platform},${a.account_name},${a.created_at}`).join("\n");
+    } else {
+      let postsToExport: any[] = [];
+      if (selectedMetric === "Total Posts") postsToExport = allPosts;
+      else if (selectedMetric === "Scheduled") postsToExport = allPosts.filter(p => p.status === "scheduled");
+      else if (selectedMetric === "Posts Published") postsToExport = allPosts.filter(p => p.status === "published");
+      else if (selectedMetric === "Drafts") postsToExport = allPosts.filter(p => p.status === "draft");
+      else if (selectedMetric === "Pending Approvals") postsToExport = allPosts.filter(p => p.status === "pending_approval");
+      
+      csv = postsToExport.map(p => 
+        `${p.id},"${p.topic || p.content_type || ''}","${p.content || ''}",${p.scheduled_for || p.created_at || ''}`
+      ).join("\n");
+    }
+
+    if (!csv) return toast.info("No data to export");
+
+    const blob = new Blob([headers + csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedMetric.replace(/\s+/g, '-').toLowerCase()}-export.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("List exported as CSV");
+  };
+
   return (
     <AppShell
       title={`Good morning, ${workspace?.userEmail?.split("@")[0] ?? "there"}`}
@@ -183,7 +256,7 @@ function Dashboard() {
           }
           return true;
         }).map((s) => (
-          <div key={s.label} className="card-soft lift p-4">
+          <div key={s.label} className="card-soft lift p-4 cursor-pointer" onClick={() => setSelectedMetric(s.label)}>
             <div className={`h-10 w-10 rounded-xl grid place-items-center ${s.tone}`}>
               <s.icon className="h-5 w-5" />
             </div>
@@ -399,6 +472,23 @@ function Dashboard() {
           </div>
         </div>
       </div>
+
+      <Dialog open={!!selectedMetric} onOpenChange={(open) => !open && setSelectedMetric(null)}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader className="flex flex-row items-start justify-between pr-8">
+            <div>
+              <DialogTitle>{selectedMetric}</DialogTitle>
+              <DialogDescription>Details for {selectedMetric?.toLowerCase()}</DialogDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleExportMetric} className="h-8">
+              <Download className="h-3.5 w-3.5 mr-2" /> Export
+            </Button>
+          </DialogHeader>
+          <div className="mt-4 flex flex-col gap-2">
+            {getModalContent()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

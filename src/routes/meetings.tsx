@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/meetings")({
@@ -28,7 +29,8 @@ function MeetingsPage() {
   const [meetLink, setMeetLink] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
-  const [clientId, setClientId] = useState<string>("none");
+  const [participantType, setParticipantType] = useState<string>("whole_team");
+  const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const isClient = workspace?.role === "client";
@@ -41,6 +43,7 @@ function MeetingsPage() {
 
   // Only show client members in the picker
   const clientMembers = members.filter((m) => m.role === "client");
+  const teamMembers = members.filter((m) => m.role === "employee" || m.role === "admin");
 
   const now = new Date();
   const upcoming = meetings.filter((m) => new Date(m.scheduled_at) > now);
@@ -59,7 +62,10 @@ function MeetingsPage() {
         agenda,
         meet_link: meetLink,
         scheduled_at,
-        ...(clientId !== "none" && { client_id: clientId }),
+        participant_type: participantType,
+        participant_ids: participantIds,
+        // Optional backward compatibility
+        ...(participantType === "client" && participantIds.length === 1 && { client_id: participantIds[0] }),
       } as any);
       toast.success("Meeting scheduled!");
       setIsDialogOpen(false);
@@ -67,6 +73,8 @@ function MeetingsPage() {
       setMeetLink("");
       setDate("");
       setTime("");
+      setParticipantType("whole_team");
+      setParticipantIds([]);
     } catch (err: any) {
       toast.error("Failed to schedule: " + err.message);
     }
@@ -220,23 +228,55 @@ function MeetingsPage() {
                 <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
               </div>
             </div>
-            {clientMembers.length > 0 && (
-              <div className="space-y-2">
-                <Label>Invite Client (optional)</Label>
-                <Select value={clientId} onValueChange={setClientId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a client..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No specific client</SelectItem>
-                    {clientMembers.map((m) => (
-                      <SelectItem key={m.user_id} value={m.user_id}>
-                        {m.users?.full_name || m.users?.email || m.user_id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Tagged clients will see this meeting in their portal.</p>
+            <div className="space-y-2">
+              <Label>Participants</Label>
+              <Select value={participantType} onValueChange={(val) => { setParticipantType(val); setParticipantIds([]); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="whole_team">Whole Team</SelectItem>
+                  <SelectItem value="single_person">Single Person (Team Member)</SelectItem>
+                  <SelectItem value="client">Client</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {participantType === "single_person" && teamMembers.length > 0 && (
+              <div className="space-y-2 border rounded-xl p-3 bg-muted/20">
+                <Label className="text-xs text-muted-foreground mb-2 block">Select Team Members</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {teamMembers.map((m) => (
+                    <label key={m.user_id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1.5 rounded-lg transition-colors">
+                      <Checkbox
+                        checked={participantIds.includes(m.user_id)}
+                        onCheckedChange={(c) => {
+                          if (c) setParticipantIds([...participantIds, m.user_id]);
+                          else setParticipantIds(participantIds.filter((id) => id !== m.user_id));
+                        }}
+                      />
+                      <span className="truncate">{m.users?.full_name || m.users?.email || m.user_id}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {participantType === "client" && clientMembers.length > 0 && (
+              <div className="space-y-2 border rounded-xl p-3 bg-muted/20">
+                <Label className="text-xs text-muted-foreground mb-2 block">Select Clients</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {clientMembers.map((m) => (
+                    <label key={m.user_id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1.5 rounded-lg transition-colors">
+                      <Checkbox
+                        checked={participantIds.includes(m.user_id)}
+                        onCheckedChange={(c) => {
+                          if (c) setParticipantIds([...participantIds, m.user_id]);
+                          else setParticipantIds(participantIds.filter((id) => id !== m.user_id));
+                        }}
+                      />
+                      <span className="truncate">{m.users?.full_name || m.users?.email || m.user_id}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
             <Button type="submit" className="w-full" disabled={createMeeting.isPending}>

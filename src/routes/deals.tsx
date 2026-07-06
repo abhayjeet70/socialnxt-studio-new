@@ -2,8 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical } from "lucide-react";
-import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useClients } from "@/lib/queries";
+import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical, Pencil } from "lucide-react";
+import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useClients, useUpdateDeal, Deal } from "@/lib/queries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +39,15 @@ function DealsPage() {
   const [amount, setAmount] = useState("");
   const [days, setDays] = useState("");
 
+  // Edit state
+  const [editDealTarget, setEditDealTarget] = useState<Deal | null>(null);
+  const [editClientName, setEditClientName] = useState("");
+  const [editProjectName, setEditProjectName] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editDays, setEditDays] = useState("");
+  const [editStage, setEditStage] = useState("");
+  const updateDeal = useUpdateDeal();
+
   // Drag state
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const dragCardId = useRef<string | null>(null);
@@ -57,8 +66,9 @@ function DealsPage() {
   const handleCreateDeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspace) return;
+    if (!window.confirm("Are you sure you want to add this deal?")) return;
     try {
-      await createDeal.mutateAsync({
+      const newDeal = await createDeal.mutateAsync({
         workspace_id: workspace.workspaceId,
         created_by: workspace.userId,
         client_name: clientName,
@@ -67,7 +77,12 @@ function DealsPage() {
         days,
         stage: "New",
       });
-      toast.success("Deal created successfully!");
+      toast.success("Deal created successfully!", {
+        action: {
+          label: "Undo",
+          onClick: () => deleteDeal.mutate({ id: (newDeal as any).id })
+        }
+      });
       setIsDialogOpen(false);
       setClientName("");
       setProjectName("");
@@ -75,6 +90,36 @@ function DealsPage() {
       setDays("");
     } catch (err: any) {
       toast.error("Failed to create deal: " + err.message);
+    }
+  };
+
+  const openEditModal = (d: Deal) => {
+    setEditDealTarget(d);
+    setEditClientName(d.client_name);
+    setEditProjectName(d.project_name);
+    setEditAmount(d.amount.toString());
+    setEditDays(d.days);
+    setEditStage(d.stage);
+  };
+
+  const handleEditDeal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editDealTarget) return;
+    try {
+      await updateDeal.mutateAsync({
+        id: editDealTarget.id,
+        updates: {
+          client_name: editClientName,
+          project_name: editProjectName,
+          amount: Number(editAmount),
+          days: editDays,
+          stage: editStage,
+        },
+      });
+      toast.success("Deal updated successfully!");
+      setEditDealTarget(null);
+    } catch (err: any) {
+      toast.error("Failed to update deal: " + err.message);
     }
   };
 
@@ -108,10 +153,19 @@ function DealsPage() {
     const id = dragCardId.current;
     const fromStage = dragFromStage.current;
     if (!id || fromStage === targetStage) return;
+    if (!window.confirm(`Move this deal to ${targetStage}?`)) return;
+
     updateStage.mutate(
       { id, stage: targetStage },
       {
-        onSuccess: () => toast.success(`Moved to ${targetStage}`),
+        onSuccess: () => {
+          toast.success(`Moved to ${targetStage}`, {
+            action: {
+              label: "Undo",
+              onClick: () => updateStage.mutate({ id, stage: fromStage })
+            }
+          });
+        },
         onError: (err: any) => toast.error(err.message),
       }
     );
@@ -198,13 +252,22 @@ function DealsPage() {
                           </div>
 
                           {canEdit && (
-                            <button
-                              onClick={() => handleDelete(d.id)}
-                              className="p-1 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                              title="Delete deal"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                              <button
+                                onClick={() => openEditModal(d)}
+                                className="p-1 rounded-md text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                                title="Edit deal"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(d.id)}
+                                className="p-1 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                                title="Delete deal"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           )}
                         </div>
 
@@ -281,6 +344,62 @@ function DealsPage() {
             <Button type="submit" className="w-full" disabled={createDeal.isPending}>
               {createDeal.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Add Deal
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Deal Dialog */}
+      <Dialog open={!!editDealTarget} onOpenChange={(open) => !open && setEditDealTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Deal</DialogTitle>
+            <DialogDescription>Update the details of this deal.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditDeal} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label>Client Name</Label>
+              <Select value={editClientName} onValueChange={setEditClientName} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a client..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Type of Work / Project Name</Label>
+              <Input value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} required placeholder="e.g. Website Redesign" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Amount (₹)</Label>
+                <Input type="number" min="0" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} required placeholder="e.g. 50000" />
+              </div>
+              <div className="space-y-2">
+                <Label>Days / Duration</Label>
+                <Input value={editDays} onChange={(e) => setEditDays(e.target.value)} required placeholder="e.g. 14 Days" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Stage</Label>
+              <Select value={editStage} onValueChange={setEditStage} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select stage..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {STAGES.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" className="w-full" disabled={updateDeal.isPending}>
+              {updateDeal.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save Changes
             </Button>
           </form>
         </DialogContent>

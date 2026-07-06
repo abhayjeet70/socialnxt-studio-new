@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import logo from "@/assets/logo.png";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign in - SocialNxt CRM" }] }),
@@ -20,13 +21,10 @@ const benefits = [
 
 function SocialNxtLogo() {
   return (
-    <div className="flex items-center gap-3">
-      <div className="relative h-11 w-11">
-        <div className="absolute inset-1 rotate-[30deg] rounded-[10px] bg-[#2d6bff]" />
-        <div className="absolute left-3 top-3 h-3 w-6 rotate-[30deg] rounded-sm border-[5px] border-[#081b61] border-r-transparent border-t-transparent" />
-        <div className="absolute bottom-3 left-2 h-3 w-6 rotate-[30deg] rounded-sm border-[5px] border-[#081b61] border-b-transparent border-l-transparent" />
+    <div className="flex items-center">
+      <div className="bg-white px-4 py-2 rounded-xl shadow-sm">
+        <img src={logo} alt="SocialNxt Logo" className="h-10 w-auto object-contain" />
       </div>
-      <span className="text-[1.85rem] font-bold tracking-normal text-white">SocialNxt</span>
     </div>
   );
 }

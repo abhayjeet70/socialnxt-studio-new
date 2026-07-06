@@ -2,13 +2,128 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { AppShell } from "@/components/app-shell";
 import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers } from "@/lib/queries";
-import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2 } from "lucide-react";
+import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
+
+// SVG brand logos for social platforms
+function PlatformLogo({ platform, size = 14 }: { platform: string; size?: number }) {
+  const s = size;
+  if (platform === "Instagram") return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="ig-grad" cx="30%" cy="107%" r="150%">
+          <stop offset="0%" stopColor="#fdf497"/>
+          <stop offset="5%" stopColor="#fdf497"/>
+          <stop offset="45%" stopColor="#fd5949"/>
+          <stop offset="60%" stopColor="#d6249f"/>
+          <stop offset="90%" stopColor="#285AEB"/>
+        </radialGradient>
+      </defs>
+      <rect width="24" height="24" rx="5" fill="url(#ig-grad)"/>
+      <circle cx="12" cy="12" r="4.5" stroke="white" strokeWidth="1.8" fill="none"/>
+      <circle cx="17.5" cy="6.5" r="1.1" fill="white"/>
+    </svg>
+  );
+  if (platform === "Facebook") return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="5" fill="#1877F2"/>
+      <path d="M16 8h-2a1 1 0 0 0-1 1v2h3l-.5 3H13v7h-3v-7H8v-3h2V9a4 4 0 0 1 4-4h2v3z" fill="white"/>
+    </svg>
+  );
+  if (platform === "LinkedIn") return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="5" fill="#0A66C2"/>
+      <path d="M7 10h2v7H7v-7zm1-3a1.1 1.1 0 1 1 0 2.2A1.1 1.1 0 0 1 8 7zm4 3h2v1h.03C14.42 10.36 15.28 10 16.2 10 18.3 10 19 11.27 19 13.2V17h-2v-3.4c0-.8-.02-1.84-1.12-1.84-1.13 0-1.3.88-1.3 1.78V17H12v-7z" fill="white"/>
+    </svg>
+  );
+  if (platform === "YouTube") return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="5" fill="#FF0000"/>
+      <path d="M19.6 7.8a2 2 0 0 0-1.4-1.4C16.8 6 12 6 12 6s-4.8 0-6.2.4A2 2 0 0 0 4.4 7.8C4 9.2 4 12 4 12s0 2.8.4 4.2a2 2 0 0 0 1.4 1.4C7.2 18 12 18 12 18s4.8 0 6.2-.4a2 2 0 0 0 1.4-1.4C20 14.8 20 12 20 12s0-2.8-.4-4.2z" fill="white" opacity="0.9"/>
+      <polygon points="10,9.5 10,14.5 15,12" fill="#FF0000"/>
+    </svg>
+  );
+  if (platform === "TikTok") return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="5" fill="#010101"/>
+      <path d="M16 6.5a3.5 3.5 0 0 0 3.5 3.5v2.5A6 6 0 0 1 14 9.5V16a5 5 0 1 1-5-5v2.7a2.3 2.3 0 1 0 2.3 2.3V6.5H16z" fill="white"/>
+    </svg>
+  );
+  return <span className="text-xs">{platform[0]}</span>;
+}
+
+const PLATFORM_COLORS: Record<string, string> = {
+  Instagram: "bg-pink-50 text-pink-700 border border-pink-200",
+  Facebook: "bg-blue-50 text-blue-700 border border-blue-200",
+  LinkedIn: "bg-sky-50 text-sky-700 border border-sky-200",
+  YouTube: "bg-red-50 text-red-700 border border-red-200",
+  TikTok: "bg-gray-100 text-gray-800 border border-gray-200",
+};
+
+const ALL_PLATFORMS = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok"];
+
+function PlatformMultiSelect({ value, onChange, disabled }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = (p: string) => {
+    if (disabled) return;
+    const next = value.includes(p) ? value.filter(x => x !== p) : [...value, p];
+    onChange(next);
+  };
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+        className="w-full min-h-[44px] px-3 py-2 text-left text-sm flex flex-wrap gap-1 items-center bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+      >
+        {value.length === 0 ? (
+          <span className="text-muted-foreground text-xs">Select platforms</span>
+        ) : (
+          value.map(p => (
+            <span key={p} className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${PLATFORM_COLORS[p] || "bg-gray-100 text-gray-700"}`}>
+              <PlatformLogo platform={p} size={12} />
+              {p}
+            </span>
+          ))
+        )}
+        <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1 mt-1">
+          {ALL_PLATFORMS.map(p => (
+            <label key={p} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 transition-colors">
+              <input
+                type="checkbox"
+                checked={value.includes(p)}
+                onChange={() => toggle(p)}
+                className="accent-blue-600 w-3.5 h-3.5"
+              />
+              <PlatformLogo platform={p} size={16} />
+              <span className="font-medium">{p}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const Route = createFileRoute("/tasks")({
   head: () => ({ meta: [{ title: "Tasks & Content Sheet — SocialNxt" }] }),
@@ -96,6 +211,26 @@ function TasksPage() {
       return dateA - dateB;
     });
 
+  const handleExportCSV = () => {
+    if (sortedPosts.length === 0) return toast.info("No data to export");
+    const headers = "Client,Platform,Content Type,Topic,Assigned To,Status,Schedule\n";
+    const csv = sortedPosts.map(p => {
+      const assigned = members.filter(m => Array.isArray(p.assigned_to) ? p.assigned_to.includes(m.user_id) : p.assigned_to === m.user_id)
+        .map(m => m.users?.full_name || m.users?.email?.split('@')[0] || 'Unknown').join('; ');
+      const platforms = p.platform || (p.platforms ? p.platforms.join('; ') : '');
+      const schedule = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : '';
+      return `"${p.client_name || ''}","${platforms}","${p.content_type || ''}","${p.topic || ''}","${assigned}","${p.status}","${schedule}"`;
+    }).join("\n");
+    const blob = new Blob([headers + csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `content-sheet-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Content Sheet exported as CSV");
+  };
+
   return (
     <AppShell
       title="Content Sheet"
@@ -143,6 +278,10 @@ function TasksPage() {
               </Select>
             </div>
           )}
+          <Button variant="outline" onClick={handleExportCSV} className="rounded-xl h-10 border-input" title="Export as CSV">
+            <Download className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Export</span>
+          </Button>
           {!isClient && (
             <Button onClick={handleAddRow} disabled={!workspace} className="rounded-xl h-10">
               <Plus className="w-4 h-4 mr-2" />
@@ -158,7 +297,7 @@ function TasksPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
-              <thead className="bg-blue-600 text-white">
+              <thead className="bg-primary text-white">
                 <tr>
                   <th className="px-4 py-3 border-r border-white/20 font-semibold w-24">DATE</th>
                   <th className="px-4 py-3 border-r border-white/20 font-semibold w-24">WEEK DAY</th>
@@ -169,6 +308,7 @@ function TasksPage() {
                   <th className="px-4 py-3 border-r border-white/20 font-semibold w-64">REFERENCE CONTENT</th>
                   <th className="px-4 py-3 border-r border-white/20 font-semibold min-w-[200px]">COMPLETED CONTENT</th>
                   <th className="px-4 py-3 border-r border-white/20 font-semibold w-40">ASSIGNED TO</th>
+                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-40">SCHEDULED TIME</th>
                   <th className="px-4 py-3 font-semibold w-32 text-center">STATUS</th>
                 </tr>
               </thead>
@@ -205,7 +345,7 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
   const dateObj = post.scheduled_for ? new Date(post.scheduled_for) : new Date(post.created_at);
   const dateInputVal = dateObj.toISOString().split('T')[0]; // YYYY-MM-DD
   const weekdayStr = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-  const rowColor = index % 2 === 0 ? "bg-[#e0f2fe]" : "bg-white"; // Light blue/white alternating
+  const rowColor = index % 2 === 0 ? "bg-purple-50" : "bg-white"; // Light purple/white alternating
 
   const handleTextBlur = (field: keyof Post, value: string) => {
     if (post[field] === value) return;
@@ -305,20 +445,13 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
         </select>
       </td>
 
-      {/* PLATFORM */}
+      {/* PLATFORM — multi-select */}
       <td className="p-0 border-r border-gray-200 align-top bg-transparent">
-        <select
-          defaultValue={post.platform || ""}
-          onChange={(e) => updatePost.mutate({ id: post.id, updates: { platform: e.target.value } })}
-          className="w-full px-3 py-3 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm cursor-pointer appearance-none"
-        >
-          <option value="" disabled>Select Platform</option>
-          <option value="Instagram">Instagram</option>
-          <option value="Facebook">Facebook</option>
-          <option value="LinkedIn">LinkedIn</option>
-          <option value="YouTube">YouTube</option>
-          <option value="TikTok">TikTok</option>
-        </select>
+        <PlatformMultiSelect
+          value={post.platforms ?? (post.platform ? [post.platform] : [])}
+          disabled={isClient}
+          onChange={(vals) => updatePost.mutate({ id: post.id, updates: { platforms: vals } })}
+        />
       </td>
 
       {/* CONTENT TYPE */}
@@ -391,10 +524,42 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
         />
       </td>
 
+      {/* SCHEDULED TIME */}
+      <td className="px-3 py-3 border-r border-gray-200 align-top">
+        <div className="flex flex-col gap-1">
+          {post.scheduled_for ? (
+            <>
+              <div className="text-xs font-medium text-gray-800">
+                {new Date(post.scheduled_for).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                {new Date(post.scheduled_for).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+              </div>
+            </>
+          ) : (
+            <span className="text-[10px] text-muted-foreground italic">Not scheduled</span>
+          )}
+          {!isClient && (
+            <input
+              type="datetime-local"
+              defaultValue={post.scheduled_for ? new Date(post.scheduled_for).toISOString().slice(0, 16) : ""}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                updatePost.mutate({ id: post.id, updates: { scheduled_for: new Date(e.target.value).toISOString() } });
+              }}
+              className="mt-1 w-full text-[10px] px-1.5 py-1 border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          )}
+        </div>
+      </td>
+
       {/* STATUS */}
       <td className="px-4 py-3 align-middle text-center">
         <div className="flex flex-col items-center gap-2">
-          <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider" style={{
+          <span 
+            className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${post.approved_by ? 'cursor-help' : ''}`}
+            title={post.approved_by ? `Approved By: ${post.approved_by}\nDate: ${post.approved_at ? new Date(post.approved_at).toLocaleString() : ''}` : undefined}
+            style={{
             backgroundColor: post.status === 'draft' ? '#f3f4f6' : 
                             post.status === 'pending_approval' ? '#fef3c7' :
                             post.status === 'approved' ? '#d1fae5' : '#dbeafe',
@@ -404,6 +569,12 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
           }}>
             {post.status.replace("_", " ")}
           </span>
+          {post.approved_by && (
+            <div className="text-[9px] text-muted-foreground mt-1 text-center leading-tight">
+              Approved by<br/>
+              <span className="font-semibold text-foreground/80">{post.approved_by}</span>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1 w-full mt-2">
             {/* Employees OR Admins can submit drafts for approval */}
@@ -425,7 +596,13 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
                 <Button 
                   size="sm" 
                   className="h-7 text-[10px] w-full bg-green-600 hover:bg-green-700 text-white"
-                  onClick={() => updateStatus.mutate({ id: post.id, status: "approved", workspace_id: workspace.workspaceId })}
+                  onClick={() => updateStatus.mutate({ 
+                    id: post.id, 
+                    status: "approved", 
+                    workspace_id: workspace.workspaceId,
+                    approved_by: workspace.userFullName || workspace.userEmail?.split("@")[0] || "Unknown",
+                    approved_at: new Date().toISOString()
+                  })}
                   disabled={updateStatus.isPending}
                 >
                   Approve

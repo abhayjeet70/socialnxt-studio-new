@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Users, Calendar, ListTodo, Users2, Video,
   KanbanSquare, FileText, AlertOctagon, BarChart3, Settings,
-  Search, Bell, ChevronDown, LogOut, Menu, X, Activity,
+  Search, Bell, ChevronDown, LogOut, Menu, X, Activity, Archive,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { useCurrentWorkspace, useUpdateProfile } from "@/lib/queries";
+import logo from "@/assets/logo.png";
+import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useProposals, useWorkspaceMembers } from "@/lib/queries";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -28,11 +29,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, LogOut as LogOutIcon, User } from "lucide-react";
+import { Loader2, LogOut as LogOutIcon, User, CheckCircle2 } from "lucide-react";
 
 const NAV: { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean }[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/clients", label: "Clients", icon: Users },
+  { to: "/clients", label: "Clients", icon: Users, exact: true },
+  { to: "/clients/closed", label: "Closed Clients", icon: Archive },
   { to: "/calendar", label: "Content Calendar", icon: Calendar },
   { to: "/tasks", label: "Tasks", icon: ListTodo },
   { to: "/team", label: "Team", icon: Users2 },
@@ -59,13 +61,12 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
-      {/* Logo — clickable, goes to dashboard */}
-      <Link to="/" onClick={onNavClick} className="px-6 py-5 flex items-center gap-3 hover:opacity-90 transition-opacity">
-        <div className="h-9 w-9 rounded-xl bg-primary grid place-items-center text-primary-foreground font-bold shrink-0">
-          {workspace?.workspaceName ? workspace.workspaceName[0].toUpperCase() : "W"}
+      <Link to="/" onClick={onNavClick} className="px-6 py-6 flex flex-col items-center gap-3 hover:opacity-90 transition-opacity text-center">
+        <div className="bg-white px-4 py-2 rounded-xl shadow-sm">
+          <img src={logo} alt="Logo" className="h-8 w-auto object-contain shrink-0" />
         </div>
-        <div className="leading-tight min-w-0">
-          <div className="text-base font-semibold tracking-tight text-white truncate max-w-[140px]" title={workspace?.workspaceName || "My Workspace"}>
+        <div className="leading-tight min-w-0 mt-1 w-full">
+          <div className="text-lg font-bold tracking-tight text-white truncate w-full" title={workspace?.workspaceName || "My Workspace"}>
             {workspace?.workspaceName || "My Workspace"}
           </div>
         </div>
@@ -83,10 +84,10 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
               to={item.to}
               onClick={onNavClick}
               className={cn(
-                "group flex items-center gap-3 px-3 py-2.5 my-0.5 rounded-xl text-sm transition-colors",
+                "group flex items-center gap-3 px-3 py-2.5 my-0.5 rounded-xl text-sm transition-all",
                 active
-                  ? "bg-sidebar-active/95 text-white shadow-[0_4px_14px_-4px_rgba(37,99,235,0.6)]"
-                  : "text-sidebar-foreground/85 hover:bg-white/5 hover:text-white",
+                  ? "bg-white text-[#2a0a4a] font-semibold shadow-md"
+                  : "text-sidebar-foreground/85 hover:bg-white/10 hover:text-white",
               )}
             >
               <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -119,6 +120,54 @@ export function AppShell({ children, title, subtitle, actions }: {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+
+  const { data: clients = [] } = useClients(workspace?.workspaceId);
+  const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
+  const { data: posts = [] } = usePosts(workspace?.workspaceId);
+  const { data: proposals = [] } = useProposals(workspace?.workspaceId);
+
+  const query = globalSearch.toLowerCase();
+  
+  const searchResults = query ? {
+    clients: [
+      ...clients.map(c => ({ id: c.id, name: c.name, desc: c.industry || "Client" })),
+      ...members.filter(m => m.role === "client").map(m => {
+        const name = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+        return { id: m.user_id, name, desc: m.users?.email || "Workspace Client" };
+      })
+    ].filter(c => c.name.toLowerCase().includes(query) || c.desc.toLowerCase().includes(query)),
+    posts: posts.filter(p => (p.topic || "").toLowerCase().includes(query) || (p.client_name || "").toLowerCase().includes(query)),
+    proposals: proposals.filter(p => p.title.toLowerCase().includes(query) || p.client_name.toLowerCase().includes(query)),
+  } : { clients: [], posts: [], proposals: [] };
+
+  const hasResults = query && (searchResults.clients.length > 0 || searchResults.posts.length > 0 || searchResults.proposals.length > 0);
+  const showDropdown = searchFocused && query.length > 0;
+
+  const recentActivities = [
+    ...posts.slice(0, 5).map(p => ({
+      ts: p.updated_at,
+      who: p.client_name || "Someone",
+      action: p.status === "approved" ? "approved" : "updated",
+      subject: p.topic || "a task",
+      color: p.status === "approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
+      icon: p.status === "approved" ? CheckCircle2 : ListTodo,
+      link: "/tasks",
+    })),
+    ...proposals.slice(0, 5).map(p => ({
+      ts: p.updated_at,
+      who: p.client_name,
+      action: p.status === "Approved" ? "approved" : "updated",
+      subject: "Proposal " + p.title,
+      color: p.status === "Approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
+      icon: FileText,
+      link: "/proposals",
+    }))
+  ]
+    .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+    .slice(0, 5);
 
   const handleEditProfile = () => {
     setEditName(workspace?.userFullName || "");
@@ -200,14 +249,96 @@ export function AppShell({ children, title, subtitle, actions }: {
               <Input
                 placeholder="Search clients, tasks, proposals..."
                 className="pl-9 h-10 bg-muted/60 border-transparent focus-visible:bg-white focus-visible:border-input rounded-xl"
+                value={globalSearch}
+                onChange={e => setGlobalSearch(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
               />
+              {showDropdown && (
+                <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-white border border-border rounded-xl shadow-lg z-50 max-h-[400px] overflow-y-auto p-2">
+                  {!hasResults ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">No results found</div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {searchResults.clients.length > 0 && (
+                        <div>
+                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Clients</div>
+                          {searchResults.clients.map(c => (
+                            <Link key={c.id} to="/clients" className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                              {c.name} <span className="text-muted-foreground ml-2 text-xs">{c.desc}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                      {searchResults.posts.length > 0 && (
+                        <div>
+                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tasks</div>
+                          {searchResults.posts.map(p => (
+                            <Link key={p.id} to="/tasks" className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                              {p.topic || "Untitled Task"} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                      {searchResults.proposals.length > 0 && (
+                        <div>
+                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Proposals</div>
+                          {searchResults.proposals.map(p => (
+                            <Link key={p.id} to="/proposals" className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                              {p.title} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="ml-auto flex items-center gap-2 sm:gap-3">
-              <button className="relative h-10 w-10 rounded-xl grid place-items-center hover:bg-muted transition-colors">
-                <Bell className="h-[18px] w-[18px] text-foreground/80" />
-                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary" />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="relative h-10 w-10 rounded-xl grid place-items-center hover:bg-muted transition-colors">
+                    <Bell className="h-[18px] w-[18px] text-foreground/80" />
+                    {recentActivities.length > 0 && (
+                      <span className="absolute top-2 right-2 h-4 w-4 rounded-full bg-red-500 text-[9px] font-bold text-white grid place-items-center border-2 border-white">
+                        {recentActivities.length}
+                      </span>
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80 p-0">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                    <div className="font-semibold text-sm">Notifications</div>
+                  </div>
+                  <div className="max-h-[300px] overflow-y-auto">
+                    {recentActivities.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-muted-foreground">No new notifications.</div>
+                    ) : (
+                      recentActivities.map((act, i) => (
+                        <div key={i}>
+                          <Link to={act.link} className="flex gap-3 px-4 py-3 hover:bg-muted transition-colors">
+                            <div className={`mt-0.5 h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${act.color}`}>
+                              <act.icon className="h-4 w-4" />
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm leading-tight text-foreground/90">
+                                <span className="font-semibold">{act.who}</span> {act.action} <span className="font-medium">{act.subject}</span>
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">{new Date(act.ts).toLocaleString()}</p>
+                            </div>
+                          </Link>
+                          {i < recentActivities.length - 1 && <DropdownMenuSeparator className="my-0" />}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="p-2 border-t border-border">
+                    <Link to="/activity-logs" className="block text-center text-xs font-medium text-primary hover:underline py-1">View all activity</Link>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <div className="flex items-center gap-2 pl-2 pr-3 h-10 rounded-xl hover:bg-muted transition-colors cursor-pointer">

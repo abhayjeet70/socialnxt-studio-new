@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, AlertOctagon, Loader2, CheckCircle2, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useCurrentWorkspace, useIssues, useCreateIssue, useUpdateIssueStatus, type Issue } from "@/lib/queries";
+import { useCurrentWorkspace, useIssues, useCreateIssue, useUpdateIssueStatus, useWorkspaceMembers, type Issue } from "@/lib/queries";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/issues")({
@@ -42,8 +42,11 @@ function IssuesPage() {
   const [description, setDescription] = useState("");
   const [issueType, setIssueType] = useState<string>("Bug / Problem");
   const [priority, setPriority] = useState<string>("Medium");
+  const [clientId, setClientId] = useState<string>("none");
 
   const isClient = workspace?.role === "client";
+  const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
+  const clientMembers = members.filter(m => m.role === "client");
 
   // Clients only see their own issues
   const issues = isClient
@@ -62,6 +65,7 @@ function IssuesPage() {
         issue_type: issueType as Issue["issue_type"],
         priority: priority as Issue["priority"],
         status: "Open",
+        ...(clientId !== "none" && { client_id: clientId }),
       });
       toast.success("Issue raised successfully!");
       setIsDialogOpen(false);
@@ -121,7 +125,9 @@ function IssuesPage() {
               <tbody>
                 {issues.map((issue) => {
                   const raisedBy = issue.users?.full_name || issue.users?.email?.split("@")[0] || "Unknown";
-                  const dateStr = new Date(issue.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+                  const dateObj = new Date(issue.created_at);
+                  const dateStr = dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+                  const timeStr = dateObj.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
                   return (
                     <tr key={issue.id} className="border-t border-border hover:bg-muted/40 transition-colors">
                       <td className="px-3 py-3">
@@ -147,7 +153,10 @@ function IssuesPage() {
                       <td className="px-3 py-3">
                         <Badge className={`rounded-full border-0 ${STATUS_TONE[issue.status]}`}>{issue.status}</Badge>
                       </td>
-                      <td className="px-3 py-3 text-foreground/70 text-xs">{dateStr}</td>
+                      <td className="px-3 py-3 text-foreground/70">
+                        <div className="text-xs font-medium text-foreground">{dateStr}</div>
+                        <div className="text-[10px] text-muted-foreground">{timeStr}</div>
+                      </td>
                       {!isClient && (
                         <td className="px-3 py-3">
                           <div className="flex items-center justify-end gap-1">
@@ -223,6 +232,22 @@ function IssuesPage() {
                 </SelectContent>
               </Select>
             </div>
+            {!isClient && clientMembers.length > 0 && (
+              <div className="space-y-2">
+                <Label>Client Name</Label>
+                <Select value={clientId} onValueChange={setClientId}>
+                  <SelectTrigger><SelectValue placeholder="Select client..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No specific client</SelectItem>
+                    {clientMembers.map((m) => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <Button type="submit" className="w-full" disabled={createIssue.isPending}>
               {createIssue.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Submit Issue

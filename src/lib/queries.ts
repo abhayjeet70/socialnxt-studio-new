@@ -11,6 +11,7 @@ export type Post = {
   content_type: string | null;
   topic: string | null;
   platform: string | null;
+  platforms: string[] | null;
   client_name: string | null;
   reference_content: string[] | null;
   completed_work: string[] | null;
@@ -21,6 +22,8 @@ export type Post = {
   assigned_to?: string[] | null;
   created_at: string;
   updated_at: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
 };
 
 export type SocialAccount = {
@@ -59,6 +62,7 @@ export type Deal = {
   created_by: string;
   completed_at: string | null;
   created_at: string;
+  updated_at?: string;
   users?: Partial<User>;
 };
 
@@ -137,6 +141,23 @@ export function useCurrentWorkspace() {
   });
 }
 
+export function useUpdateWorkspace() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ workspace_id, name }: { workspace_id: string; name: string }) => {
+      const { error } = await supabase
+        .from("workspaces")
+        .update({ name })
+        .eq("id", workspace_id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["current_workspace"] });
+    },
+  });
+}
+
 /** Derive dashboard summary stats from raw posts + accounts */
 export function useDashboardStats(workspaceId: string | undefined): DashboardStats {
   const { data: posts = [] } = usePosts(workspaceId);
@@ -169,8 +190,11 @@ export function useCreatePost() {
 export function useUpdatePostStatus() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, status, workspace_id }: { id: string; status: string; workspace_id: string }) => {
-      const { data, error } = await supabase.from("posts").update({ status }).eq("id", id).select().single();
+    mutationFn: async ({ id, status, workspace_id, approved_by, approved_at }: { id: string; status: string; workspace_id: string; approved_by?: string; approved_at?: string }) => {
+      const updates: any = { status };
+      if (approved_by !== undefined) updates.approved_by = approved_by;
+      if (approved_at !== undefined) updates.approved_at = approved_at;
+      const { data, error } = await supabase.from("posts").update(updates).eq("id", id).select().single();
       if (error) throw error;
       return data;
     },
@@ -382,7 +406,7 @@ export function useUpdateDealStage() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: string }) => {
-      const updates: any = { stage };
+      const updates: any = { stage, updated_at: new Date().toISOString() };
       if (stage === "Completed") {
         updates.completed_at = new Date().toISOString();
       }
@@ -390,6 +414,22 @@ export function useUpdateDealStage() {
         .from("deals")
         .update(updates)
         .eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["deals"] });
+      queryClient.invalidateQueries({ queryKey: ["revenue_graph"] });
+    },
+  });
+}
+
+export function useUpdateDeal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Deal> }) => {
+      const finalUpdates = { ...updates, updated_at: new Date().toISOString() };
+      const { error } = await supabase.from("deals").update(finalUpdates).eq("id", id);
       if (error) throw error;
       return true;
     },
@@ -478,6 +518,7 @@ export type Issue = {
   issue_type: "New Work Request" | "Bug / Problem" | "Feedback";
   priority: "Low" | "Medium" | "High" | "Critical";
   status: "Open" | "In Progress" | "Resolved";
+  client_id?: string | null;
   created_at: string;
   users?: Partial<User>;
 };
@@ -539,6 +580,8 @@ export type Client = {
   platforms: string[] | null;
   status: string;
   created_at: string;
+  closed_at?: string | null;
+  close_reason?: string | null;
 };
 
 export function useClients(workspaceId: string | undefined) {
@@ -564,6 +607,34 @@ export function useCreateClient() {
       const { data, error } = await supabase.from("clients").insert(client).select().single();
       if (error) throw error;
       return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["clients", variables.workspace_id] });
+    },
+  });
+}
+
+export function useUpdateClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates, workspace_id }: { id: string; updates: Partial<Client>; workspace_id: string }) => {
+      const { data, error } = await supabase.from("clients").update(updates).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["clients", variables.workspace_id] });
+    },
+  });
+}
+
+export function useDeleteClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, workspace_id }: { id: string; workspace_id: string }) => {
+      const { error } = await supabase.from("clients").delete().eq("id", id);
+      if (error) throw error;
+      return true;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["clients", variables.workspace_id] });

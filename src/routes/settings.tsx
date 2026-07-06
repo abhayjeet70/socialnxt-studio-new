@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Loader2 } from "lucide-react";
 import { useState } from "react";
 import {
-  useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember,
+  useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember, useUpdateWorkspace,
 } from "@/lib/queries";
 import { toast } from "sonner";
 
@@ -41,10 +41,12 @@ function SettingsPage() {
   const { data: workspace } = useCurrentWorkspace();
   const { data: members = [], isLoading } = useWorkspaceMembers(workspace?.workspaceId);
   const removeMember = useRemoveWorkspaceMember();
+  const updateWorkspace = useUpdateWorkspace();
   const isAdmin = workspace?.role === "admin";
 
   const [companyName, setCompanyName] = useState(workspace?.workspaceName || "");
   const [supportEmail, setSupportEmail] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   // Group members by role
   const byRole = {
@@ -63,6 +65,19 @@ function SettingsPage() {
       {
         onSuccess: () => toast.success(`${name} removed.`),
         onError: (e) => toast.error("Failed: " + e.message),
+      }
+    );
+  };
+
+  const handleSaveCompanySettings = () => {
+    if (!workspace) return;
+    setIsSaving(true);
+    updateWorkspace.mutate(
+      { workspace_id: workspace.workspaceId, name: companyName },
+      {
+        onSuccess: () => toast.success("Workspace settings updated successfully!"),
+        onError: (err) => toast.error("Failed to update settings: " + err.message),
+        onSettled: () => setIsSaving(false),
       }
     );
   };
@@ -262,7 +277,10 @@ function SettingsPage() {
               />
             </div>
             {isAdmin && (
-              <Button className="rounded-xl h-10" onClick={() => toast.success("Settings saved!")}>Save changes</Button>
+              <Button className="rounded-xl h-10" onClick={handleSaveCompanySettings} disabled={isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save changes
+              </Button>
             )}
           </div>
         </TabsContent>

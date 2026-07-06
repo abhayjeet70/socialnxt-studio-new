@@ -472,6 +472,17 @@ function CalendarPage() {
                                 </div>
                               )}
 
+                              {post.approved_by && (
+                                <div className="space-y-0.5 mt-2">
+                                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                                    Approved By
+                                  </div>
+                                  <div className="text-[11px] font-medium text-foreground">
+                                    {post.approved_by}
+                                  </div>
+                                </div>
+                              )}
+
                               {post.assigned_to && post.assigned_to.length > 0 && members && (() => {
                                 const assignedMembers = post.assigned_to
                                   .map((uid) => members.find((m) => m.user_id === uid))
