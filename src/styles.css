@@ -148,3 +148,30 @@
     box-shadow: var(--shadow-lift);
   }
 }
+
+/* Mobile table wrapper: negative horizontal margin + scroll */
+@utility mobile-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Safe area bottom (notched phones) */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Kanban scroll snap */
+.kanban-board {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.kanban-col {
+  scroll-snap-align: start;
+}
+
+/* On touch devices: always show card action buttons (no hover needed) */
+@media (hover: none) {
+  .touch-always-visible {
+    opacity: 1 !important;
+  }
+}

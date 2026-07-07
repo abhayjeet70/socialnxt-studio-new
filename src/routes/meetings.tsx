@@ -208,7 +208,7 @@ function MeetingsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Schedule Meeting</DialogTitle>
-            <DialogDescription>Create a new meeting and optionally tag it to a specific client.</DialogDescription>
+            <DialogDescription>Schedule a client sync, content review, or strategy call.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateMeeting} className="space-y-4 pt-2">
             <div className="space-y-2">

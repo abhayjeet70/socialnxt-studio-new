@@ -406,7 +406,7 @@ export function useUpdateDealStage() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: string }) => {
-      const updates: any = { stage, updated_at: new Date().toISOString() };
+      const updates: any = { stage };
       if (stage === "Completed") {
         updates.completed_at = new Date().toISOString();
       }
@@ -428,7 +428,7 @@ export function useUpdateDeal() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<Deal> }) => {
-      const finalUpdates = { ...updates, updated_at: new Date().toISOString() };
+      const finalUpdates = { ...updates };
       const { error } = await supabase.from("deals").update(finalUpdates).eq("id", id);
       if (error) throw error;
       return true;

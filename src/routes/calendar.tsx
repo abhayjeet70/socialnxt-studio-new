@@ -188,7 +188,7 @@ function CalendarPage() {
               </div>
 
               {!isClient && (
-                <div className="sm:ml-auto flex items-center gap-2">
+                <div className="sm:ml-auto flex items-center gap-2 overflow-x-auto pb-0.5">
                   {/* Platform filter dropdown */}
                   <div className="w-44">
                     <Select
@@ -256,8 +256,8 @@ function CalendarPage() {
               )}
             </div>
 
-            {/* Platform legend */}
-            <div className="flex flex-wrap items-center gap-1.5 mb-4">
+            {/* Platform legend — hidden on mobile, shown on sm+ */}
+            <div className="hidden sm:flex flex-wrap items-center gap-1.5 mb-4">
               {PLATFORMS.map((p) => (
                 <span key={p} className="text-[11px] px-2 py-0.5 rounded-full bg-muted flex items-center gap-1.5">
                   <span
@@ -360,9 +360,11 @@ function CalendarPage() {
           </div>
         </div>
 
-        {/* ── Side Panel ── */}
+        {/* ── Side Panel — desktop sidebar / mobile bottom sheet ── */}
+        {/* Desktop: sidebar next to calendar */}
         <div
           className={`
+            hidden sm:block
             transition-all duration-300 ease-in-out overflow-hidden
             ${selectedDay ? "w-[300px] min-w-[280px] opacity-100 ml-4" : "w-0 opacity-0 ml-0"}
           `}
@@ -573,6 +575,120 @@ function CalendarPage() {
           )}
         </div>
       </div>
+
+      {/* Mobile modal — centered dialog when a day is tapped on small screens */}
+      {selectedDay && (
+        <div className="sm:hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => { setSelectedDay(null); setSelectedPost(null); }}
+          />
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-sm max-h-[80vh]">
+            {/* Sheet header */}
+            <div className="px-4 pb-3 border-b border-border flex items-start justify-between gap-2">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-0.5">
+                  {DAY_NAMES[new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDay).getDay()].toUpperCase()}
+                </div>
+                <div className="text-xl font-bold text-foreground">
+                  {selectedDay} {MONTH_NAMES[currentDate.getMonth()]}
+                </div>
+              </div>
+              <button
+                onClick={() => { setSelectedDay(null); setSelectedPost(null); }}
+                className="text-muted-foreground hover:text-foreground transition-colors mt-0.5 rounded p-1.5 hover:bg-muted"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {/* Sheet body — scrollable */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {selectedDayPosts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 text-center gap-2">
+                  <Calendar className="h-8 w-8 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">Nothing scheduled for this day</p>
+                </div>
+              ) : (
+                selectedDayPosts.map((post) => {
+                  const color = getPlatformColor(post);
+                  const text = getPostText(post);
+                  const isImageUrl = (url: string) =>
+                    url.match(/\.(jpeg|jpg|gif|png|webp)/i) || url.includes("supabase.co");
+                  const allMedia = [...(post.completed_work || []), ...(post.reference_content || [])];
+                  const previewUrl = allMedia.find(isImageUrl);
+                  const isExpanded = selectedPost?.id === post.id;
+
+                  return (
+                    <div
+                      key={post.id}
+                      onClick={() => setSelectedPost(isExpanded ? null : post)}
+                      className={`rounded-xl border cursor-pointer transition-all duration-200 ${isExpanded ? "border-primary/40 shadow-sm" : "border-border hover:border-primary/20"} bg-white overflow-hidden`}
+                    >
+                      <div className="h-1 w-full" style={{ background: color }} />
+                      <div className="p-3">
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="h-2 w-2 rounded-full shrink-0 mt-0.5" style={{ background: color }} />
+                            <span className="text-xs font-semibold text-foreground truncate">{text}</span>
+                          </div>
+                          <StatusBadge status={post.status} />
+                        </div>
+                        <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground mb-1">
+                          {post.platform && (
+                            <span className="bg-muted px-1.5 py-0.5 rounded-full">{post.platform}</span>
+                          )}
+                          {post.client_name && !isClient && (
+                            <span className="bg-muted px-1.5 py-0.5 rounded-full truncate max-w-[160px]">
+                              Client: {post.client_name}
+                            </span>
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div className="mt-2 space-y-2 border-t border-border pt-2">
+                            {previewUrl && (
+                              <div className="w-full h-36 rounded-lg overflow-hidden bg-muted">
+                                <img src={previewUrl} alt="preview" className="w-full h-full object-cover" />
+                              </div>
+                            )}
+                            {post.content && (
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Caption</div>
+                                <p className="text-[11px] text-foreground/80 leading-relaxed line-clamp-4 whitespace-pre-wrap">
+                                  {post.content.replace(/^\[.*?\]\s*/, "")}
+                                </p>
+                              </div>
+                            )}
+                            {!isClient && post.status !== "published" && (
+                              <div className="flex gap-1.5 pt-1">
+                                {post.status !== "scheduled" && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(post, "scheduled"); }}
+                                    className="text-[10px] px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold hover:bg-amber-100 transition-colors"
+                                  >
+                                    Mark Scheduled
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleStatusChange(post, "published"); }}
+                                  className="text-[10px] px-2.5 py-1 rounded-lg bg-green-50 text-green-700 font-semibold hover:bg-green-100 transition-colors"
+                                >
+                                  Mark Published
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }

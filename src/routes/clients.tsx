@@ -263,7 +263,7 @@ function ClientsPage() {
         <DialogContent className="sm:max-w-[450px]">
           <DialogHeader>
             <DialogTitle>Edit Client</DialogTitle>
-            <DialogDescription>Update the client's details below.</DialogDescription>
+            <DialogDescription>Update this client's platforms, status, and contact details.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUpdateClient} className="space-y-4 pt-2">
             <div className="space-y-2">
@@ -337,8 +337,10 @@ function ClientsPage() {
       </Dialog>
 
       <div className="card-soft p-4 sm:p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-          <div className="relative flex-1">
+        {/* Filter bar */}
+        <div className="flex flex-col gap-2 mb-4">
+          {/* Search — full width on mobile */}
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search clients..."
@@ -347,28 +349,31 @@ function ClientsPage() {
               className="pl-9 h-10 rounded-xl bg-muted/50 border-transparent"
             />
           </div>
-          <Button variant="outline" className="rounded-xl h-10"><Filter className="h-4 w-4" /> Filters</Button>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background">
-              <SelectValue placeholder="All Statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All Statuses">All Statuses</SelectItem>
-              {Object.keys(STATUS_TONE).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={platformFilter} onValueChange={setPlatformFilter}>
-            <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background">
-              <SelectValue placeholder="All Platforms" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All Platforms">All Platforms</SelectItem>
-              {PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {/* Filters — horizontal scroll row on mobile */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <Button variant="outline" className="rounded-xl h-10 shrink-0"><Filter className="h-4 w-4" /> Filters</Button>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background shrink-0">
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All Statuses">All Statuses</SelectItem>
+                {Object.keys(STATUS_TONE).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={platformFilter} onValueChange={setPlatformFilter}>
+              <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background shrink-0">
+                <SelectValue placeholder="All Platforms" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All Platforms">All Platforms</SelectItem>
+                {PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="overflow-x-auto -mx-1">
+        <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">

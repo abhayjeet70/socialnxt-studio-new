@@ -133,14 +133,15 @@ function ClosedClientsPage() {
         </div>
       ) : (
         <div className="card-soft overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-px">
+          <table className="w-full text-sm min-w-[560px]">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
                 <th className="px-4 py-3 font-semibold">Client</th>
                 <th className="px-4 py-3 font-semibold">Industry</th>
                 <th className="px-4 py-3 font-semibold">Date Closed</th>
-                <th className="px-4 py-3 font-semibold">Reason</th>
-                <th className="px-4 py-3 font-semibold">Platforms</th>
+                <th className="px-4 py-3 font-semibold hidden md:table-cell">Reason</th>
+                <th className="px-4 py-3 font-semibold hidden lg:table-cell">Platforms</th>
                 {isAdmin && <th className="px-4 py-3 font-semibold text-right">Actions</th>}
               </tr>
             </thead>
@@ -167,10 +168,10 @@ function ClosedClientsPage() {
                       ? new Date(c.closed_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 text-foreground/70 max-w-[200px] truncate" title={c.close_reason ?? ""}>
+                  <td className="px-4 py-3 text-foreground/70 max-w-[200px] truncate hidden md:table-cell" title={c.close_reason ?? ""}>
                     {c.close_reason || "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 hidden lg:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {(c.platforms ?? []).length > 0
                         ? c.platforms!.slice(0, 3).map((p) => (
@@ -205,6 +206,7 @@ function ClosedClientsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </AppShell>

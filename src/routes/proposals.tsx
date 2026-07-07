@@ -204,12 +204,14 @@ ${p.notes || "No additional notes."}
       subtitle="Send, track and manage client proposals end-to-end."
       actions={
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="rounded-xl h-10 border-border" onClick={handleBulkDownload}>
-            <Download className="h-4 w-4 mr-2" /> Bulk Download
+          <Button variant="outline" className="rounded-xl h-10 border-border" onClick={handleBulkDownload} title="Bulk Download">
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline ml-2">Bulk Download</span>
           </Button>
           {canEdit && (
             <Button className="rounded-xl h-10" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" /> New Proposal
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline ml-1">New Proposal</span>
             </Button>
           )}
         </div>
@@ -375,7 +377,7 @@ ${p.notes || "No additional notes."}
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>New Proposal</DialogTitle>
-            <DialogDescription>Create a new client proposal. Upload a PDF for the client to review and approve.</DialogDescription>
+            <DialogDescription>Send a branded social media proposal — attach your PDF deck for the client to review and sign off.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="space-y-1">

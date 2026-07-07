@@ -40,29 +40,71 @@ function ReportsPage() {
 
   const isLoading = postsLoading || clientsLoading || membersLoading || revenueLoading;
 
+  // ─── Compute effective date window ────────────────────────────────────────────
+  const now = new Date();
+  const getDateWindow = (): { start: Date; end: Date } => {
+    const end = new Date(now); end.setHours(23, 59, 59, 999);
+    if (dateRange === "today") {
+      const start = new Date(now); start.setHours(0, 0, 0, 0);
+      return { start, end };
+    } else if (dateRange === "yesterday") {
+      const start = new Date(now); start.setDate(start.getDate() - 1); start.setHours(0, 0, 0, 0);
+      const e = new Date(now); e.setDate(e.getDate() - 1); e.setHours(23, 59, 59, 999);
+      return { start, end: e };
+    } else if (dateRange === "last7") {
+      const start = new Date(now); start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0);
+      return { start, end };
+    } else if (dateRange === "last30") {
+      const start = new Date(now); start.setDate(start.getDate() - 30); start.setHours(0, 0, 0, 0);
+      return { start, end };
+    } else if (dateRange === "custom" && customStartDate && customEndDate) {
+      const s = new Date(customStartDate); s.setHours(0, 0, 0, 0);
+      const e = new Date(customEndDate); e.setHours(23, 59, 59, 999);
+      return { start: s, end: e };
+    } else { // last6m (default)
+      const start = new Date(now); start.setMonth(start.getMonth() - 6); start.setHours(0, 0, 0, 0);
+      return { start, end };
+    }
+  };
+  const { start: windowStart, end: windowEnd } = getDateWindow();
+
+  const inWindow = (dateStr: string | null | undefined): boolean => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return d >= windowStart && d <= windowEnd;
+  };
+
+  // ─── Filtered datasets ────────────────────────────────────────────────────────
+  const filteredPosts = posts.filter(p => inWindow(p.scheduled_for) || inWindow(p.created_at));
+  const filteredDeals = deals.filter(d => inWindow(d.created_at));
+
+
   // ─── Platform Distribution ───────────────────────────────────────────────────
   const platformCounts: Record<string, number> = {};
-  posts.forEach((p) => { if (p.platform) platformCounts[p.platform] = (platformCounts[p.platform] || 0) + 1; });
+  filteredPosts.forEach((p) => { if (p.platform) platformCounts[p.platform] = (platformCounts[p.platform] || 0) + 1; });
   const totalPlatformPosts = Object.values(platformCounts).reduce((a, b) => a + b, 0);
   const platformDistribution = Object.entries(platformCounts)
     .map(([name, count]) => ({ name, value: totalPlatformPosts > 0 ? Math.round((count / totalPlatformPosts) * 100) : 0 }))
     .sort((a, b) => b.value - a.value);
 
   // ─── Monthly Performance (published vs scheduled) ────────────────────────────
-  const now = new Date();
   const monthlyPerf: { month: string; published: number; scheduled: number }[] = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  // Compute how many months the window spans (1–12)
+  const diffMs = windowEnd.getTime() - windowStart.getTime();
+  const monthCount = Math.min(Math.max(1, Math.ceil(diffMs / (30 * 24 * 60 * 60 * 1000))), 12);
+  const refMonth = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), 1);
+  for (let i = monthCount - 1; i >= 0; i--) {
+    const d = new Date(refMonth.getFullYear(), refMonth.getMonth() - i, 1);
     const m = d.getMonth();
     const y = d.getFullYear();
     const monthName = MONTHS[m];
     monthlyPerf.push({
       month: monthName,
-      published: posts.filter((p) => {
+      published: filteredPosts.filter((p) => {
         const pd = p.scheduled_for ? new Date(p.scheduled_for) : null;
         return pd && pd.getMonth() === m && pd.getFullYear() === y && p.status === "published";
       }).length,
-      scheduled: posts.filter((p) => {
+      scheduled: filteredPosts.filter((p) => {
         const pd = p.scheduled_for ? new Date(p.scheduled_for) : null;
         return pd && pd.getMonth() === m && pd.getFullYear() === y && (p.status === "scheduled" || p.status === "published");
       }).length,
@@ -73,8 +115,8 @@ function ReportsPage() {
   const teamProductivity = members
     .filter((m) => m.role === "employee" || m.role === "admin")
     .map((m) => {
-      const assigned = posts.filter((p) => Array.isArray(p.assigned_to) ? p.assigned_to.includes(m.user_id) : p.assigned_to === (m.user_id as any)).length;
-      const published = posts.filter((p) => (Array.isArray(p.assigned_to) ? p.assigned_to.includes(m.user_id) : p.assigned_to === (m.user_id as any)) && p.status === "published").length;
+      const assigned = filteredPosts.filter((p) => Array.isArray(p.assigned_to) ? p.assigned_to.includes(m.user_id) : p.assigned_to === (m.user_id as any)).length;
+      const published = filteredPosts.filter((p) => (Array.isArray(p.assigned_to) ? p.assigned_to.includes(m.user_id) : p.assigned_to === (m.user_id as any)) && p.status === "published").length;
       const pct = assigned > 0 ? Math.round((published / assigned) * 100) : 0;
       return {
         name: m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown",
@@ -87,10 +129,10 @@ function ReportsPage() {
 
   // ─── Top Clients by Revenue ──────────────────────────────────────────────────
   const clientRevenue = clients.map((c) => {
-    const rev = deals
+    const rev = filteredDeals
       .filter((d) => d.client_name === c.name && d.stage === "Completed")
       .reduce((sum, d) => sum + (d.amount || 0), 0);
-    const activePosts = posts.filter((p) => p.client_name === c.name && (p.status === "scheduled" || p.status === "approved")).length;
+    const activePosts = filteredPosts.filter((p) => p.client_name === c.name && (p.status === "scheduled" || p.status === "approved")).length;
     return { ...c, revenue: rev, activePosts };
   }).sort((a, b) => b.revenue - a.revenue);
 
@@ -127,7 +169,7 @@ function ReportsPage() {
       title="Reports & Analytics"
       subtitle="Track your agency's performance and client growth."
       actions={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={dateRange} onValueChange={setDateRange}>
             <SelectTrigger className="w-auto min-w-[180px] h-10 rounded-xl bg-background border-border">
               <div className="flex items-center gap-2">
@@ -146,13 +188,13 @@ function ReportsPage() {
           </Select>
           
           {dateRange === "custom" && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-[140px] justify-start text-left font-normal rounded-xl h-10 bg-white",
+                      "w-auto min-w-[140px] justify-start text-left font-normal rounded-xl h-10 bg-white px-3",
                       !customStartDate && "text-muted-foreground"
                     )}
                   >
@@ -175,7 +217,7 @@ function ReportsPage() {
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-[140px] justify-start text-left font-normal rounded-xl h-10 bg-white",
+                      "w-auto min-w-[140px] justify-start text-left font-normal rounded-xl h-10 bg-white px-3",
                       !customEndDate && "text-muted-foreground"
                     )}
                   >
@@ -198,7 +240,8 @@ function ReportsPage() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button className="rounded-xl h-10">
-                <Download className="h-4 w-4 mr-2" /> Export Report
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline ml-2">Export Report</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -222,7 +265,7 @@ function ReportsPage() {
           {revenueData.length === 0 ? (
             <div className="h-72 flex items-center justify-center text-xs text-muted-foreground">No completed deals yet — approve proposals to see revenue.</div>
           ) : (
-            <div className="h-72">
+            <div className="h-48 sm:h-72">
               <ResponsiveContainer>
                 <BarChart data={revenueData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />

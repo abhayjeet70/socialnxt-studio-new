@@ -47,6 +47,15 @@ const NAV: { to: string; label: string; icon: typeof LayoutDashboard; exact?: bo
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
+// Bottom tab bar — 5 most-used routes
+const BOTTOM_TABS = [
+  { to: "/", label: "Home", icon: LayoutDashboard, exact: true },
+  { to: "/clients", label: "Clients", icon: Users, exact: true },
+  { to: "/calendar", label: "Calendar", icon: Calendar },
+  { to: "/tasks", label: "Tasks", icon: ListTodo },
+  { to: "/deals", label: "Deals", icon: KanbanSquare },
+];
+
 function SidebarContent({ workspace, pathname, onNavClick }: {
   workspace: any;
   pathname: string;
@@ -120,6 +129,7 @@ export function AppShell({ children, title, subtitle, actions }: {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -191,6 +201,47 @@ export function AppShell({ children, title, subtitle, actions }: {
     window.location.href = "/login";
   };
 
+  const SearchDropdown = ({ onClose }: { onClose?: () => void }) => (
+    <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-white border border-border rounded-xl shadow-lg z-50 max-h-[400px] overflow-y-auto p-2">
+      {!hasResults ? (
+        <div className="p-4 text-center text-sm text-muted-foreground">No results found</div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {searchResults.clients.length > 0 && (
+            <div>
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Clients</div>
+              {searchResults.clients.map(c => (
+                <Link key={c.id} to="/clients" onClick={onClose} className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                  {c.name} <span className="text-muted-foreground ml-2 text-xs">{c.desc}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          {searchResults.posts.length > 0 && (
+            <div>
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tasks</div>
+              {searchResults.posts.map(p => (
+                <Link key={p.id} to="/tasks" onClick={onClose} className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                  {p.topic || "Untitled Task"} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          {searchResults.proposals.length > 0 && (
+            <div>
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Proposals</div>
+              {searchResults.proposals.map(p => (
+                <Link key={p.id} to="/proposals" onClick={onClose} className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                  {p.title} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="min-h-screen w-full bg-[oklch(0.985_0.005_255)] flex">
 
@@ -224,6 +275,41 @@ export function AppShell({ children, title, subtitle, actions }: {
         <SidebarContent workspace={workspace} pathname={pathname} onNavClick={() => setMobileMenuOpen(false)} />
       </aside>
 
+      {/* ── Mobile search overlay ─────────────────────────────────────────── */}
+      {mobileSearchOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 lg:hidden" onClick={() => { setMobileSearchOpen(false); setGlobalSearch(""); }}>
+          <div className="bg-white px-4 pt-4 pb-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  placeholder="Search clients, tasks, proposals..."
+                  className="pl-9 h-11 bg-muted/60 border-transparent focus-visible:bg-white focus-visible:border-input rounded-xl"
+                  value={globalSearch}
+                  onChange={e => setGlobalSearch(e.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+                />
+              </div>
+              <button
+                onClick={() => { setMobileSearchOpen(false); setGlobalSearch(""); }}
+                className="text-sm font-medium text-primary px-2 py-2 shrink-0"
+              >
+                Cancel
+              </button>
+            </div>
+            {showDropdown && (
+              <div className="relative">
+                <div className="mt-2 w-full bg-white border border-border rounded-xl shadow-lg max-h-[60vh] overflow-y-auto p-2">
+                  <SearchDropdown onClose={() => { setMobileSearchOpen(false); setGlobalSearch(""); }} />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Main column ───────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Topbar */}
@@ -243,7 +329,7 @@ export function AppShell({ children, title, subtitle, actions }: {
               SocialNxt
             </Link>
 
-            {/* Search bar */}
+            {/* Desktop search bar */}
             <div className="relative max-w-md w-full hidden sm:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -254,49 +340,18 @@ export function AppShell({ children, title, subtitle, actions }: {
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
               />
-              {showDropdown && (
-                <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-white border border-border rounded-xl shadow-lg z-50 max-h-[400px] overflow-y-auto p-2">
-                  {!hasResults ? (
-                    <div className="p-4 text-center text-sm text-muted-foreground">No results found</div>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      {searchResults.clients.length > 0 && (
-                        <div>
-                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Clients</div>
-                          {searchResults.clients.map(c => (
-                            <Link key={c.id} to="/clients" className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
-                              {c.name} <span className="text-muted-foreground ml-2 text-xs">{c.desc}</span>
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                      {searchResults.posts.length > 0 && (
-                        <div>
-                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tasks</div>
-                          {searchResults.posts.map(p => (
-                            <Link key={p.id} to="/tasks" className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
-                              {p.topic || "Untitled Task"} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                      {searchResults.proposals.length > 0 && (
-                        <div>
-                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Proposals</div>
-                          {searchResults.proposals.map(p => (
-                            <Link key={p.id} to="/proposals" className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
-                              {p.title} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+              {showDropdown && <SearchDropdown />}
             </div>
 
-            <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <div className="ml-auto flex items-center gap-1 sm:gap-2">
+              {/* Mobile search icon */}
+              <button
+                className="sm:hidden h-10 w-10 rounded-xl grid place-items-center hover:bg-muted transition-colors"
+                onClick={() => setMobileSearchOpen(true)}
+              >
+                <Search className="h-[18px] w-[18px] text-foreground/80" />
+              </button>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="relative h-10 w-10 rounded-xl grid place-items-center hover:bg-muted transition-colors">
@@ -370,16 +425,40 @@ export function AppShell({ children, title, subtitle, actions }: {
           </div>
         </header>
 
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 mb-6 sm:flex sm:items-end sm:justify-between">
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 lg:py-8 pb-24 lg:pb-8">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
             <div className="min-w-0">
               <h1 className="truncate text-2xl sm:text-[28px] font-bold tracking-tight text-foreground">{title}</h1>
-              {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+              {/* Subtitle hidden on mobile to prevent layout overflow */}
+              {subtitle && <p className="hidden sm:block mt-1 text-sm text-muted-foreground">{subtitle}</p>}
             </div>
-            {actions && <div className="shrink-0 flex items-center gap-2">{actions}</div>}
+            {actions && <div className="shrink-0 flex items-center gap-2 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 w-full sm:w-auto">{actions}</div>}
           </div>
           {children}
         </main>
+
+        {/* ── Bottom Tab Bar — mobile only ──────────────────────────────────── */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-border safe-area-bottom">
+          <div className="flex items-stretch h-16">
+            {BOTTOM_TABS.map((tab) => {
+              const active = tab.exact ? pathname === tab.to : pathname === tab.to || pathname.startsWith(tab.to + "/");
+              const Icon = tab.icon;
+              return (
+                <Link
+                  key={tab.to}
+                  to={tab.to}
+                  className={cn(
+                    "flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors",
+                    active ? "text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  <Icon className={cn("h-5 w-5 transition-transform", active && "scale-110")} />
+                  <span>{tab.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
       </div>
 
       {/* Edit Profile Dialog */}
@@ -387,7 +466,7 @@ export function AppShell({ children, title, subtitle, actions }: {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Profile</DialogTitle>
-            <DialogDescription>Update your personal information.</DialogDescription>
+            <DialogDescription>Update your name as it appears to clients and team members across SocialNxt.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveProfile} className="space-y-4 pt-2">
             <div className="space-y-2">

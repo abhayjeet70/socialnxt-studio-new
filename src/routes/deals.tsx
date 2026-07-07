@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
+
 export const Route = createFileRoute("/deals")({
   head: () => ({ meta: [{ title: "Deals — SocialNxt CRM" }] }),
   component: DealsPage,
@@ -178,8 +179,9 @@ function DealsPage() {
     setDragOverStage(null);
     const id = dragCardId.current;
     const fromStage = dragFromStage.current;
+    dragCardId.current = null;
+    dragFromStage.current = null;
     if (!id || fromStage === targetStage) return;
-    if (!window.confirm(`Move this deal to ${targetStage}?`)) return;
 
     updateStage.mutate(
       { id, stage: targetStage },
@@ -188,15 +190,13 @@ function DealsPage() {
           toast.success(`Moved to ${targetStage}`, {
             action: {
               label: "Undo",
-              onClick: () => updateStage.mutate({ id, stage: fromStage })
+              onClick: () => updateStage.mutate({ id, stage: fromStage! })
             }
           });
         },
         onError: (err: any) => toast.error(err.message),
       }
     );
-    dragCardId.current = null;
-    dragFromStage.current = null;
   };
 
   const handleDragEnd = () => {
@@ -204,6 +204,72 @@ function DealsPage() {
     dragCardId.current = null;
     dragFromStage.current = null;
   };
+
+  // ── Touch drag handlers (mobile) ──
+  const touchCardId = useRef<string | null>(null);
+  const touchFromStage = useRef<string | null>(null);
+  const touchLastX = useRef<number>(0);
+  const touchLastY = useRef<number>(0);
+  const touchDragging = useRef<boolean>(false);
+
+  const handleTouchStart = (e: React.TouchEvent, dealId: string, stage: string) => {
+    touchCardId.current = dealId;
+    touchFromStage.current = stage;
+    touchDragging.current = false;
+    const t = e.touches[0];
+    touchLastX.current = t.clientX;
+    touchLastY.current = t.clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchCardId.current) return;
+    const t = e.touches[0];
+    touchLastX.current = t.clientX;
+    touchLastY.current = t.clientY;
+    touchDragging.current = true;
+    // Prevent page scroll while dragging a card
+    e.preventDefault();
+
+    // Highlight which column the finger is over
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    const colEl = el?.closest("[data-stage]");
+    const hoverStage = colEl?.getAttribute("data-stage");
+    setDragOverStage(hoverStage || null);
+  };
+
+  const handleTouchEnd = () => {
+    setDragOverStage(null);
+    if (!touchDragging.current) {
+      // Tap — not a drag, clear state
+      touchCardId.current = null;
+      touchFromStage.current = null;
+      return;
+    }
+    const el = document.elementFromPoint(touchLastX.current, touchLastY.current);
+    const colEl = el?.closest("[data-stage]");
+    const targetStage = colEl?.getAttribute("data-stage");
+    const id = touchCardId.current;
+    const fromStage = touchFromStage.current;
+    touchCardId.current = null;
+    touchFromStage.current = null;
+    touchDragging.current = false;
+    if (!id || !targetStage || fromStage === targetStage) return;
+    updateStage.mutate(
+      { id, stage: targetStage },
+      {
+        onSuccess: () => {
+          toast.success(`Moved to ${targetStage}`, {
+            action: {
+              label: "Undo",
+              onClick: () => updateStage.mutate({ id, stage: fromStage! })
+            }
+          });
+        },
+        onError: (err: any) => toast.error(err.message),
+      }
+    );
+  };
+
 
   return (
     <AppShell
@@ -222,8 +288,8 @@ function DealsPage() {
         </div>
       }
     >
-      <div className="overflow-x-auto">
-        <div className="grid grid-flow-col auto-cols-[280px] gap-4 min-w-full pb-2">
+      <div className="overflow-x-auto kanban-board -mx-1 px-1 pb-4">
+        <div className="grid grid-flow-col auto-cols-[min(280px,80vw)] gap-4 min-w-full pb-2">
           {STAGES.map((stage) => {
             const items = visibleDeals.filter((d) => d.stage === stage);
             const total = items.reduce((s, d) => s + d.amount, 0);
@@ -232,7 +298,8 @@ function DealsPage() {
             return (
               <div
                 key={stage}
-                className={`rounded-2xl p-3 transition-colors ${
+                data-stage={stage}
+                className={`kanban-col rounded-2xl p-3 transition-colors ${
                   isOver ? "bg-primary/5 ring-2 ring-primary/30" : "bg-muted/40"
                 }`}
                 onDragOver={canEdit ? (e) => handleDragOver(e, stage) : undefined}
@@ -266,11 +333,15 @@ function DealsPage() {
                         draggable={canEdit}
                         onDragStart={canEdit ? (e) => handleDragStart(e, d.id, stage) : undefined}
                         onDragEnd={canEdit ? handleDragEnd : undefined}
+                        onTouchStart={canEdit ? (e) => handleTouchStart(e, d.id, stage) : undefined}
+                        onTouchMove={canEdit ? handleTouchMove : undefined}
+                        onTouchEnd={canEdit ? handleTouchEnd : undefined}
                         className={`card-soft p-3.5 relative group transition-all ${
                           canEdit ? "cursor-grab active:cursor-grabbing active:opacity-60 active:scale-95" : ""
                         }`}
                         style={{
                           borderTop: `3px solid ${STAGE_COLOR[stage]}`,
+                          touchAction: canEdit ? "none" : "auto",
                         }}
                       >
                         {/* Drag handle + client name row */}
@@ -283,7 +354,7 @@ function DealsPage() {
                           </div>
 
                           {canEdit && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 touch-always-visible transition-all shrink-0">
                               <button
                                 onClick={() => openEditModal(d)}
                                 className="p-1 rounded-md text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors"
@@ -342,7 +413,7 @@ function DealsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add New Deal</DialogTitle>
-            <DialogDescription>Add a new project to your deals pipeline.</DialogDescription>
+            <DialogDescription>Track a new social media retainer, campaign, or content deal for a client.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateDeal} className="space-y-4 pt-2">
             <div className="space-y-2">
@@ -359,8 +430,8 @@ function DealsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Type of Work / Project Name</Label>
-              <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} required placeholder="e.g. Website Redesign" />
+              <Label>Project Name</Label>
+              <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -385,7 +456,7 @@ function DealsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Deal</DialogTitle>
-            <DialogDescription>Update the details of this deal.</DialogDescription>
+            <DialogDescription>Edit the scope, value, or stage of this social media deal.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditDeal} className="space-y-4 pt-2">
             <div className="space-y-2">
@@ -402,8 +473,8 @@ function DealsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Type of Work / Project Name</Label>
-              <Input value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} required placeholder="e.g. Website Redesign" />
+              <Label>Project Name</Label>
+              <Input value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

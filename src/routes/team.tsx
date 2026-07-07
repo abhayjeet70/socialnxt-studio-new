@@ -144,7 +144,7 @@ function TeamPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite a Team Member</DialogTitle>
-            <DialogDescription>They will receive an email with a link to join your workspace.</DialogDescription>
+            <DialogDescription>Add a new team member or client to collaborate on content, approvals, and campaigns.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSendInvite} className="space-y-4 pt-2">
             <div className="space-y-2">
