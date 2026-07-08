@@ -530,7 +530,7 @@ export function useIssues(workspaceId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("issues")
-        .select("*, users(id, full_name, email)")
+        .select("*, users!issues_raised_by_fkey(id, full_name, email)")
         .eq("workspace_id", workspaceId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -558,6 +558,35 @@ export function useUpdateIssueStatus() {
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const { error } = await supabase.from("issues").update({ status }).eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["issues"] });
+    },
+  });
+}
+
+export function useUpdateIssue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (issue: Partial<Issue> & { id: string }) => {
+      const { id, ...updateData } = issue;
+      const { data, error } = await supabase.from("issues").update(updateData).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["issues"] });
+    },
+  });
+}
+
+export function useDeleteIssue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const { error } = await supabase.from("issues").delete().eq("id", id);
       if (error) throw error;
       return true;
     },
@@ -600,6 +629,24 @@ export function useClients(workspaceId: string | undefined) {
   });
 }
 
+/** Returns only active (non-closed) clients. Use this for all dropdowns. */
+export function useActiveClients(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: ["clients_active", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("workspace_id", workspaceId!)
+        .neq("status", "Closed")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as Client[];
+    },
+  });
+}
+
 export function useCreateClient() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -610,6 +657,7 @@ export function useCreateClient() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["clients", variables.workspace_id] });
+      queryClient.invalidateQueries({ queryKey: ["clients_active", variables.workspace_id] });
     },
   });
 }
@@ -624,6 +672,7 @@ export function useUpdateClient() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["clients", variables.workspace_id] });
+      queryClient.invalidateQueries({ queryKey: ["clients_active", variables.workspace_id] });
     },
   });
 }
@@ -638,6 +687,7 @@ export function useDeleteClient() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["clients", variables.workspace_id] });
+      queryClient.invalidateQueries({ queryKey: ["clients_active", variables.workspace_id] });
     },
   });
 }
@@ -695,6 +745,25 @@ export function useCreateProposal() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["proposals", variables.workspace_id] });
+    },
+  });
+}
+
+export function useUpdateProposal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (proposal: Partial<Proposal> & { id: string }) => {
+      const { id, ...updateData } = proposal;
+      const { data, error } = await supabase.from("proposals").update(updateData).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      if (variables.workspace_id) {
+        queryClient.invalidateQueries({ queryKey: ["proposals", variables.workspace_id] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["proposals"] });
+      }
     },
   });
 }
@@ -841,6 +910,25 @@ export function useCreateQuotation() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["quotations", variables.workspace_id] });
+    },
+  });
+}
+
+export function useUpdateQuotation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (quotation: Partial<Quotation> & { id: string }) => {
+      const { id, ...updateData } = quotation;
+      const { data, error } = await supabase.from("quotations").update(updateData).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      if (variables.workspace_id) {
+        queryClient.invalidateQueries({ queryKey: ["quotations", variables.workspace_id] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      }
     },
   });
 }

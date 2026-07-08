@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Plus, Video, Calendar as CalIcon, Loader2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useCurrentWorkspace, useMeetings, useCreateMeeting, useDeleteMeeting, useWorkspaceMembers } from "@/lib/queries";
+import { useCurrentWorkspace, useMeetings, useCreateMeeting, useDeleteMeeting, useWorkspaceMembers, useClients } from "@/lib/queries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ function MeetingsPage() {
   const { data: workspace } = useCurrentWorkspace();
   const { data: allMeetings = [], isLoading } = useMeetings(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
+  const { data: clients = [] } = useClients(workspace?.workspaceId);
   const createMeeting = useCreateMeeting();
   const deleteMeeting = useDeleteMeeting();
 
@@ -44,9 +45,26 @@ function MeetingsPage() {
       })
     : allMeetings;
 
+  const closedNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
+  const closedEmails = new Set(clients.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
+
+  const activeClients = clients.filter(c => c.status !== "Closed");
+
   // Only show client members in the picker
-  const clientMembers = members.filter((m) => m.role === "client");
+  const clientMembers = members.filter((m) => {
+    if (m.role !== "client") return false;
+    const name = m.users?.full_name || m.users?.email?.split("@")[0];
+    const email = m.users?.email?.toLowerCase();
+    const isClosedByName = name && closedNames.has(name.toLowerCase());
+    const isClosedByEmail = email && closedEmails.has(email);
+    return !isClosedByName && !isClosedByEmail;
+  });
   const teamMembers = members.filter((m) => m.role === "employee" || m.role === "admin");
+
+  const allAvailableClients = [
+    ...clientMembers.map(m => ({ id: m.user_id, label: m.users?.full_name || m.users?.email || m.user_id })),
+    ...activeClients.map(c => ({ id: c.id, label: c.name + (c.email ? ` (${c.email})` : "") }))
+  ];
 
   const now = new Date();
   const upcoming = meetings.filter((m) => new Date(m.scheduled_at) > now);
@@ -205,7 +223,7 @@ function MeetingsPage() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Schedule Meeting</DialogTitle>
             <DialogDescription>Schedule a client sync, content review, or strategy call.</DialogDescription>
@@ -219,7 +237,7 @@ function MeetingsPage() {
               <Label>Meeting Link</Label>
               <Input type="url" value={meetLink} onChange={(e) => setMeetLink(e.target.value)} required placeholder="https://meet.google.com/..." />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Date</Label>
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
@@ -261,20 +279,20 @@ function MeetingsPage() {
               </div>
             )}
 
-            {participantType === "client" && clientMembers.length > 0 && (
+            {participantType === "client" && allAvailableClients.length > 0 && (
               <div className="space-y-2 border rounded-xl p-3 bg-muted/20">
                 <Label className="text-xs text-muted-foreground mb-2 block">Select Clients</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {clientMembers.map((m) => (
-                    <label key={m.user_id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1.5 rounded-lg transition-colors">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                  {allAvailableClients.map((m) => (
+                    <label key={m.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1.5 rounded-lg transition-colors">
                       <Checkbox
-                        checked={participantIds.includes(m.user_id)}
+                        checked={participantIds.includes(m.id)}
                         onCheckedChange={(c) => {
-                          if (c) setParticipantIds([...participantIds, m.user_id]);
-                          else setParticipantIds(participantIds.filter((id) => id !== m.user_id));
+                          if (c) setParticipantIds([...participantIds, m.id]);
+                          else setParticipantIds(participantIds.filter((id) => id !== m.id));
                         }}
                       />
-                      <span className="truncate">{m.users?.full_name || m.users?.email || m.user_id}</span>
+                      <span className="truncate">{m.label}</span>
                     </label>
                   ))}
                 </div>

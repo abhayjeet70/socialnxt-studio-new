@@ -59,17 +59,29 @@ function CalendarPage() {
 
   // Merge clients table + workspace members with role 'client' into one list for the filter dropdown
   const allClientOptions = useMemo(() => {
-    const fromClientsTable = clients.map((c) => ({
-      value: c.name,
-      label: c.name,
-      group: "clients" as const,
-    }));
+    const closedNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
+    const closedEmails = new Set(clients.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
+
+    const fromClientsTable = clients
+      .filter(c => c.status !== "Closed")
+      .map((c) => ({
+        value: c.name,
+        label: c.name,
+        group: "clients" as const,
+      }));
+
     const fromMembers = members
       .filter((m) => m.role === "client")
       .map((m) => {
         const name = m.users?.full_name || m.users?.email?.split("@")[0] || m.user_id;
-        return { value: name, label: name, group: "members" as const };
+        return { value: name, label: name, group: "members" as const, email: m.users?.email?.toLowerCase() };
+      })
+      .filter((m) => {
+        const isClosedByName = m.value && closedNames.has(m.value.toLowerCase());
+        const isClosedByEmail = m.email && closedEmails.has(m.email);
+        return !isClosedByName && !isClosedByEmail;
       });
+
     // Deduplicate by value
     const seen = new Set<string>();
     return [...fromClientsTable, ...fromMembers].filter((o) => {

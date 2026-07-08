@@ -72,8 +72,8 @@ function ActivityLogsPage() {
         const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
         const action = deriveAction(p);
         const subject = p.topic || p.content_type || "content";
-        const client = p.client_name || "";
-        const platform = p.platform || "";
+        const client = p.client_name || "-";
+        const platform = p.platform || (p.platforms && p.platforms.length > 0 ? p.platforms.join("; ") : "-");
 
         const events: { ts: Date; who: string; action: string; subject: string; client: string; platform: string; icon: any; color: string; extra: string }[] = [];
 
@@ -87,7 +87,7 @@ function ActivityLogsPage() {
           platform,
           icon: getActionIcon(action),
           color: getActionColor(action),
-          extra: "",
+          extra: "-",
         });
 
         // Reference content uploads
@@ -134,7 +134,7 @@ function ActivityLogsPage() {
     const filteredDeals = isClient ? deals.filter(d => d.client_name?.toLowerCase() === clientName.toLowerCase()) : deals;
     const dealEvents = filteredDeals.map((d) => {
       const authorMember = members.find((m) => m.user_id === d.created_by);
-      const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
+      const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "System";
       
       const events = [];
       
@@ -143,11 +143,11 @@ function ActivityLogsPage() {
         who,
         action: "created deal",
         subject: d.project_name || "Project",
-        client: d.client_name || "",
+        client: d.client_name || "-",
         platform: "Deals",
         icon: KanbanSquare,
         color: "bg-[#8B5CF6]/10 text-[#6D28D9]",
-        extra: `₹${d.amount?.toLocaleString("en-IN") || 0}`,
+        extra: `Amount: ₹${d.amount?.toLocaleString("en-IN") || 0}`,
       });
 
       if (d.updated_at && d.updated_at !== d.created_at) {
@@ -156,11 +156,11 @@ function ActivityLogsPage() {
           who,
           action: d.stage === "New" ? "updated deal details" : `moved deal to ${d.stage}`,
           subject: d.project_name || "Project",
-          client: d.client_name || "",
+          client: d.client_name || "-",
           platform: "Deals",
           icon: KanbanSquare,
           color: "bg-[#8B5CF6]/10 text-[#6D28D9]",
-          extra: `₹${d.amount?.toLocaleString("en-IN") || 0}`,
+          extra: `Amount: ₹${d.amount?.toLocaleString("en-IN") || 0}`,
         });
       }
 
@@ -171,18 +171,18 @@ function ActivityLogsPage() {
     const filteredProposals = isClient ? proposals.filter(p => p.client_name?.toLowerCase() === clientName.toLowerCase()) : proposals;
     const proposalEvents = filteredProposals.map((p) => {
       const authorMember = members.find((m) => m.user_id === p.created_by);
-      const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
+      const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "System";
       const action = p.status === "Draft" ? "drafted a proposal" : p.status === "Sent" ? "sent a proposal" : `marked proposal as ${p.status}`;
       return {
         ts: new Date(p.updated_at || p.created_at || new Date()),
         who,
         action,
         subject: p.title || "Proposal",
-        client: p.client_name || "",
+        client: p.client_name || "-",
         platform: "Proposals",
         icon: FileText,
         color: p.status === "Approved" ? "bg-[#10B981]/10 text-[#047857]" : "bg-[#F59E0B]/10 text-[#92400E]",
-        extra: p.pdf_url ? "📄 View PDF" : "",
+        extra: `Amount: ₹${p.amount?.toLocaleString("en-IN") || 0} ${p.pdf_url ? "(PDF Attached)" : ""}`,
       };
     });
 
@@ -234,7 +234,8 @@ function ActivityLogsPage() {
     const csv = filteredActivities.map(a => {
       const date = a.ts.toLocaleDateString("en-IN");
       const time = a.ts.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-      return `"${date}","${time}","${a.who}","${a.action}","${a.subject}","${a.client}","${a.platform}","${a.extra}"`;
+      const esc = (s: string) => `"${(s || "-").replace(/"/g, '""')}"`;
+      return [date, time, a.who, a.action, a.subject, a.client, a.platform, a.extra].map(esc).join(",");
     }).join("\n");
     const blob = new Blob([headers + csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -250,7 +251,7 @@ function ActivityLogsPage() {
 
     const cols = ["Date", "Time", "Who", "Action", "Subject", "Client", "Platform", "Details"];
 
-    const esc = (v: string) => v?.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") ?? "";
+    const esc = (v: string) => (v || "-").toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
     const headerRow = cols.map(c => `<Cell ss:StyleID="hdr"><Data ss:Type="String">${esc(c)}</Data></Cell>`).join("");
 
@@ -292,7 +293,58 @@ function ActivityLogsPage() {
   };
 
   const handleExportPDF = () => {
-    window.print();
+    if (filteredActivities.length === 0) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const html = `
+      <html>
+        <head>
+          <title>Activity Logs Export</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; color: #111; }
+            h1 { font-size: 1.5rem; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f3f4f6; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h1>Activity Logs</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Subject</th>
+                <th>Client</th>
+                <th>Platform</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredActivities.map(a => `
+                <tr>
+                  <td>${a.ts.toLocaleDateString("en-IN")}</td>
+                  <td>${a.ts.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</td>
+                  <td>${a.who || "-"}</td>
+                  <td>${a.action || "-"}</td>
+                  <td>${a.subject || "-"}</td>
+                  <td>${a.client || "-"}</td>
+                  <td>${a.platform || "-"}</td>
+                  <td>${a.extra || "-"}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 300);
   };
 
   return (

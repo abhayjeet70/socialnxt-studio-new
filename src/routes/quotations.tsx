@@ -8,17 +8,17 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
 import {
   Plus, Loader2, FileText, Trash2, Eye, Printer, X,
-  Receipt, BellRing, Send,
+  Receipt, BellRing, Send, Edit3
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 import {
-  useCurrentWorkspace, useQuotations, useCreateQuotation,
+  useCurrentWorkspace, useQuotations, useCreateQuotation, useUpdateQuotation,
   useUpdateQuotationStatus, useDeleteQuotation, useClients,
   useWorkspaceMembers, Quotation, LineItem,
 } from "@/lib/queries";
@@ -92,21 +92,48 @@ function amountToWords(amount: number): string {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 function QuotationsPage() {
   const { data: workspace } = useCurrentWorkspace();
-  const { data: quotations = [], isLoading } = useQuotations(workspace?.workspaceId);
+  const { data: quotationsAll = [], isLoading } = useQuotations(workspace?.workspaceId);
   const { data: clients = [] } = useClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const createQuotation = useCreateQuotation();
+  const updateQuotation = useUpdateQuotation();
   const updateStatus = useUpdateQuotationStatus();
   const deleteQuotation = useDeleteQuotation();
 
   const isAdmin = workspace?.role === "admin";
+  const isClient = workspace?.role === "client";
+  const clientName = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
   const canEdit = workspace?.role === "admin" || workspace?.role === "employee";
 
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterClient, setFilterClient] = useState<string>("all");
+
+  const quotations = useMemo(() => {
+    let filtered = isClient 
+      ? quotationsAll.filter(q => q.client_name?.toLowerCase() === clientName.toLowerCase() && q.status !== "Draft")
+      : quotationsAll;
+
+    return filtered.filter(q => {
+      if (filterStatus !== "all" && q.status !== filterStatus) return false;
+      if (!isClient && filterClient !== "all" && q.client_name !== filterClient) return false;
+      return true;
+    });
+  }, [quotationsAll, isClient, clientName, filterStatus, filterClient]);
+
   const allClientNames = useMemo(() => {
-    const names = new Set(clients.map((c) => c.name));
+    const closedClientNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
+    const closedClientEmails = new Set(clients.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
+
+    const names = new Set(clients.filter(c => c.status !== "Closed").map((c) => c.name));
     members.filter((m) => m.role === "client").forEach((m) => {
       const n = m.users?.full_name || m.users?.email?.split("@")[0];
-      if (n) names.add(n);
+      const email = m.users?.email?.toLowerCase();
+      const isClosedByName = n && closedClientNames.has(n.toLowerCase());
+      const isClosedByEmail = email && closedClientEmails.has(email);
+      
+      if (n && !isClosedByName && !isClosedByEmail) {
+        names.add(n);
+      }
     });
     return Array.from(names).sort();
   }, [clients, members]);
@@ -118,6 +145,7 @@ function QuotationsPage() {
 
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<Quotation | null>(null);
+  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
 
   const defaultForm = () => ({
     // Client
@@ -171,49 +199,120 @@ function QuotationsPage() {
   const removeLine = (idx: number) =>
     setForm((f) => ({ ...f, line_items: f.line_items.filter((_, i) => i !== idx) }));
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!form.client_name) return toast.error("Please select a client.");
     if (form.line_items.length === 0) return toast.error("Add at least one line item.");
     if (!workspace?.userId) return;
 
-    createQuotation.mutate(
-      {
-        workspace_id: workspace.workspaceId,
-        created_by: workspace.userId,
-        client_name: form.client_name,
-        assigned_to: form.assigned_to,
-        notify_admin: form.notify_admin,
-        service_type: form.service_type,
-        transaction_type: form.transaction_type,
-        issue_date: form.issue_date || null,
-        valid_until: form.valid_until || null,
-        line_items: form.line_items,
-        tax_rate: form.tax_rate,
-        notes: form.notes || null,
-        status: form.status,
-        extra_fields: {
-          client_gstin: form.client_gstin,
-          place_of_supply: form.place_of_supply,
-          source: form.source,
-          reference_no: form.reference_no,
-          upi_id: form.upi_id,
-          payment_phone: form.payment_phone,
-          company_address: form.company_address,
-          company_gstin: form.company_gstin,
-          company_tagline: form.company_tagline,
-          company_email: form.company_email,
-          company_website: form.company_website,
+    if (editingQuotation) {
+      updateQuotation.mutate(
+        {
+          id: editingQuotation.id,
+          workspace_id: workspace.workspaceId,
+          client_name: form.client_name,
+          assigned_to: form.assigned_to,
+          notify_admin: form.notify_admin,
+          service_type: form.service_type,
+          transaction_type: form.transaction_type,
+          issue_date: form.issue_date || null,
+          valid_until: form.valid_until || null,
+          line_items: form.line_items,
+          tax_rate: form.tax_rate,
+          notes: form.notes || null,
+          status: form.status,
+          extra_fields: {
+            client_gstin: form.client_gstin,
+            place_of_supply: form.place_of_supply,
+            source: form.source,
+            reference_no: form.reference_no,
+            upi_id: form.upi_id,
+            payment_phone: form.payment_phone,
+            company_address: form.company_address,
+            company_gstin: form.company_gstin,
+            company_tagline: form.company_tagline,
+            company_email: form.company_email,
+            company_website: form.company_website,
+          },
         },
-      },
-      {
-        onSuccess: () => {
-          toast.success("Quotation created!");
-          setOpen(false);
-          setForm(defaultForm());
+        {
+          onSuccess: () => {
+            toast.success("Quotation updated!");
+            setOpen(false);
+            setEditingQuotation(null);
+            setForm(defaultForm());
+          },
+          onError: (e: any) => toast.error("Failed: " + e.message),
+        }
+      );
+    } else {
+      createQuotation.mutate(
+        {
+          workspace_id: workspace.workspaceId,
+          created_by: workspace.userId,
+          client_name: form.client_name,
+          assigned_to: form.assigned_to,
+          notify_admin: form.notify_admin,
+          service_type: form.service_type,
+          transaction_type: form.transaction_type,
+          issue_date: form.issue_date || null,
+          valid_until: form.valid_until || null,
+          line_items: form.line_items,
+          tax_rate: form.tax_rate,
+          notes: form.notes || null,
+          status: form.status,
+          extra_fields: {
+            client_gstin: form.client_gstin,
+            place_of_supply: form.place_of_supply,
+            source: form.source,
+            reference_no: form.reference_no,
+            upi_id: form.upi_id,
+            payment_phone: form.payment_phone,
+            company_address: form.company_address,
+            company_gstin: form.company_gstin,
+            company_tagline: form.company_tagline,
+            company_email: form.company_email,
+            company_website: form.company_website,
+          },
         },
-        onError: (e: any) => toast.error("Failed: " + e.message),
-      }
-    );
+        {
+          onSuccess: () => {
+            toast.success("Quotation created!");
+            setOpen(false);
+            setForm(defaultForm());
+          },
+          onError: (e: any) => toast.error("Failed: " + e.message),
+        }
+      );
+    }
+  };
+
+  const handleEdit = (q: Quotation) => {
+    setEditingQuotation(q);
+    setForm({
+      client_name: q.client_name,
+      client_gstin: q.extra_fields?.client_gstin || "",
+      place_of_supply: q.extra_fields?.place_of_supply || "",
+      source: q.extra_fields?.source || "",
+      reference_no: q.extra_fields?.reference_no || "",
+      issue_date: q.issue_date || "",
+      valid_until: q.valid_until || "",
+      service_type: q.service_type,
+      transaction_type: q.transaction_type,
+      assigned_to: q.assigned_to,
+      notify_admin: q.notify_admin,
+      line_items: [...q.line_items],
+      tax_rate: q.tax_rate,
+      notes: q.notes || "",
+      status: q.status,
+      upi_id: q.extra_fields?.upi_id || "",
+      payment_phone: q.extra_fields?.payment_phone || "",
+      company_address: q.extra_fields?.company_address || "3467-E Sudama Nagar Indore, Indore 452009, Madhya Pradesh MP, India",
+      company_gstin: q.extra_fields?.company_gstin || "",
+      company_tagline: q.extra_fields?.company_tagline || "Transform your Brand with Digital Excellence",
+      company_email: q.extra_fields?.company_email || "support@webnxt.co",
+      company_website: q.extra_fields?.company_website || "http://www.webnxt.co",
+    });
+    setOpen(true);
   };
 
   const handleStatusChange = (q: Quotation, newStatus: string) => {
@@ -238,13 +337,52 @@ function QuotationsPage() {
     );
   };
 
+  const livePreviewMock: Quotation = useMemo(() => {
+    return {
+      id: editingQuotation?.id || "mock-id",
+      workspace_id: workspace?.workspaceId || "",
+      created_by: editingQuotation?.created_by || workspace?.userId || "",
+      quotation_number: editingQuotation?.quotation_number || "Q-NEW",
+      client_name: form.client_name,
+      assigned_to: form.assigned_to,
+      notify_admin: form.notify_admin,
+      service_type: form.service_type,
+      transaction_type: form.transaction_type,
+      issue_date: form.issue_date || new Date().toISOString(),
+      valid_until: form.valid_until,
+      line_items: form.line_items,
+      tax_rate: form.tax_rate,
+      notes: form.notes,
+      status: form.status as Quotation["status"],
+      created_at: editingQuotation?.created_at || new Date().toISOString(),
+      updated_at: editingQuotation?.updated_at || new Date().toISOString(),
+      extra_fields: {
+        company_address: form.company_address,
+        company_gstin: form.company_gstin,
+        company_tagline: form.company_tagline,
+        company_email: form.company_email,
+        company_website: form.company_website,
+        client_gstin: form.client_gstin,
+        place_of_supply: form.place_of_supply,
+        source: form.source,
+        reference_no: form.reference_no,
+        upi_id: form.upi_id,
+        payment_phone: form.payment_phone,
+      },
+    };
+  }, [editingQuotation, workspace, form]);
+
   return (
     <AppShell
       title="Quotations"
       subtitle="Create, assign and track detailed service quotations for your clients."
       actions={
         canEdit ? (
-          <Button className="rounded-xl h-10" onClick={() => setOpen(true)}>
+          <Button className="rounded-xl h-10" onClick={() => {
+            setEditingQuotation(null);
+            setForm(defaultForm());
+            setOpen(true);
+          }}>
             <Plus className="h-4 w-4 mr-1" /> New Quotation
           </Button>
         ) : undefined
@@ -252,6 +390,38 @@ function QuotationsPage() {
     >
       {/* ── Table ────────────────────────────────────────────────────────── */}
       <div className="card-soft p-4 sm:p-5">
+        {quotationsAll.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">Status</Label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-8 w-[120px] text-xs"><SelectValue placeholder="All" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  {["Draft", "Sent", "Approved", "Rejected"].map((s) => {
+                    if (isClient && s === "Draft") return null;
+                    return <SelectItem key={s} value={s}>{s}</SelectItem>;
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            {!isClient && allClientNames.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">Client</Label>
+                <Select value={filterClient} onValueChange={setFilterClient}>
+                  <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue placeholder="All Clients" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Clients</SelectItem>
+                    {allClientNames.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="py-20 flex justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -325,14 +495,23 @@ function QuotationsPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          {isAdmin && (
-                            <button
-                              title="Delete"
-                              onClick={() => handleDelete(q)}
-                              className="h-8 w-8 rounded-lg hover:bg-red-50 text-red-500 grid place-items-center transition-colors"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                          {canEdit && (
+                            <>
+                              <button
+                                title="Edit"
+                                onClick={() => handleEdit(q)}
+                                className="h-8 w-8 rounded-lg hover:bg-muted grid place-items-center text-muted-foreground transition-colors"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                              <button
+                                title="Delete"
+                                onClick={() => handleDelete(q)}
+                                className="h-8 w-8 rounded-lg hover:bg-red-50 text-red-500 grid place-items-center transition-colors"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -345,185 +524,198 @@ function QuotationsPage() {
         )}
       </div>
 
-      {/* ── New Quotation Dialog ──────────────────────────────────────────── */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>New Quotation</DialogTitle>
-            <DialogDescription>Fill in the details to generate a professional quotation.</DialogDescription>
-          </DialogHeader>
+            {/* ── New Quotation Dialog ──────────────────────────────────────────── */}
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md md:max-w-lg overflow-y-auto p-0 flex flex-col bg-[#FAF9F6]">
+          <SheetHeader className="px-6 py-5 border-b shrink-0 bg-white sticky top-0 z-10">
+            <SheetTitle className="flex items-center gap-2 text-indigo-700">
+              <Eye className="h-4 w-4" /> 
+              {editingQuotation ? "Edit Quotation" : "New Quotation"}
+            </SheetTitle>
+            <SheetDescription className="sr-only">Fill in the details to generate a professional quotation.</SheetDescription>
+          </SheetHeader>
 
-          <div className="space-y-5 mt-2">
-            {/* ── Section: Company Info ── */}
-            <div className="rounded-xl border border-border/60 p-4 space-y-3 bg-muted/20">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Company Info</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="p-6 space-y-6 flex-1 text-sm">
+            {/* Top Info */}
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Quotation No *</Label>
+                <Input value={editingQuotation?.quotation_number || "Q-NEW"} disabled className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Headline</Label>
+                <Input value={form.company_tagline} onChange={(e) => setForm({ ...form, company_tagline: e.target.value })} placeholder="e.g. Quotation Q-00003" className="bg-white border-gray-200 shadow-sm" />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Issue Date</Label>
+                <Input type="date" value={form.issue_date ?? ""} onChange={(e) => setForm({ ...form, issue_date: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Valid Until</Label>
+                <Input type="date" value={form.valid_until} onChange={(e) => setForm({ ...form, valid_until: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Source</Label>
+                <Input value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Reference</Label>
+                <Input value={form.reference_no} onChange={(e) => setForm({ ...form, reference_no: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+              </div>
+            </div>
+
+            {/* Company */}
+            <div className="space-y-4 pt-4 border-t border-gray-200">
+              <h3 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Company</h3>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Tagline</Label>
+                <Input value={form.company_tagline} onChange={(e) => setForm({ ...form, company_tagline: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Address Line 1</Label>
+                <Input value={form.company_address} onChange={(e) => setForm({ ...form, company_address: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">GSTIN</Label>
+                <Input value={form.company_gstin} onChange={(e) => setForm({ ...form, company_gstin: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <Label>Company Address</Label>
-                  <Input value={form.company_address} onChange={(e) => setForm({ ...form, company_address: e.target.value })} placeholder="Company address" />
+                  <Label className="text-xs font-bold text-gray-700">Email</Label>
+                  <Input value={form.company_email} onChange={(e) => setForm({ ...form, company_email: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
                 </div>
                 <div className="space-y-1">
-                  <Label>Company GSTIN</Label>
-                  <Input value={form.company_gstin} onChange={(e) => setForm({ ...form, company_gstin: e.target.value })} placeholder="e.g. 23AAECW2930L1ZA" />
-                </div>
-                <div className="space-y-1">
-                  <Label>Tagline</Label>
-                  <Input value={form.company_tagline} onChange={(e) => setForm({ ...form, company_tagline: e.target.value })} />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label>Email</Label>
-                    <Input value={form.company_email} onChange={(e) => setForm({ ...form, company_email: e.target.value })} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Website</Label>
-                    <Input value={form.company_website} onChange={(e) => setForm({ ...form, company_website: e.target.value })} />
-                  </div>
+                  <Label className="text-xs font-bold text-gray-700">Website</Label>
+                  <Input value={form.company_website} onChange={(e) => setForm({ ...form, company_website: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
                 </div>
               </div>
             </div>
 
-            {/* ── Section: Client ── */}
-            <div className="rounded-xl border border-border/60 p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Bill To</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Bill To */}
+            <div className="space-y-4 pt-4 border-t border-gray-200">
+              <h3 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Bill To</h3>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Client *</Label>
+                {allClientNames.length > 0 ? (
+                  <Select value={form.client_name} onValueChange={(v) => setForm({ ...form, client_name: v })}>
+                    <SelectTrigger className="bg-white border-gray-200 shadow-sm"><SelectValue placeholder="Select client" /></SelectTrigger>
+                    <SelectContent>
+                      {allClientNames.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input placeholder="Client name" value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <Label>Client *</Label>
-                  {allClientNames.length > 0 ? (
-                    <Select value={form.client_name} onValueChange={(v) => setForm({ ...form, client_name: v })}>
-                      <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
-                      <SelectContent>
-                        {allClientNames.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input placeholder="Client name" value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} />
-                  )}
+                  <Label className="text-xs font-bold text-gray-700">Client GSTIN</Label>
+                  <Input value={form.client_gstin} onChange={(e) => setForm({ ...form, client_gstin: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
                 </div>
                 <div className="space-y-1">
-                  <Label>Client GSTIN</Label>
-                  <Input value={form.client_gstin} onChange={(e) => setForm({ ...form, client_gstin: e.target.value })} placeholder="GST number" />
+                  <Label className="text-xs font-bold text-gray-700">Place of Supply</Label>
+                  <Input value={form.place_of_supply} onChange={(e) => setForm({ ...form, place_of_supply: e.target.value })} className="bg-white border-gray-200 shadow-sm" />
+                </div>
+              </div>
+            </div>
+
+            {/* Other Metadata */}
+            <div className="space-y-4 pt-4 border-t border-gray-200">
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-xs font-bold text-gray-700">Service Type</Label>
+                  <Select value={form.service_type ?? ""} onValueChange={(v) => setForm({ ...form, service_type: v })}>
+                    <SelectTrigger className="bg-white border-gray-200 shadow-sm"><SelectValue placeholder="Select service" /></SelectTrigger>
+                    <SelectContent>{SERVICE_TYPES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Place of Supply</Label>
-                  <Input value={form.place_of_supply} onChange={(e) => setForm({ ...form, place_of_supply: e.target.value })} placeholder="e.g. Maharashtra" />
+                  <Label className="text-xs font-bold text-gray-700">Transaction Type</Label>
+                  <Select value={form.transaction_type ?? ""} onValueChange={(v) => setForm({ ...form, transaction_type: v })}>
+                    <SelectTrigger className="bg-white border-gray-200 shadow-sm"><SelectValue placeholder="Select type" /></SelectTrigger>
+                    <SelectContent>{TRANSACTION_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-bold text-gray-700">Assigned To (Seller)</Label>
+                  <Select value={form.assigned_to ?? ""} onValueChange={(v) => setForm({ ...form, assigned_to: v || null })}>
+                    <SelectTrigger className="bg-white border-gray-200 shadow-sm"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Unassigned</SelectItem>
+                      {employees.map((m) => {
+                        const name = m.users?.full_name || m.users?.email?.split("@")[0] || m.user_id;
+                        return <SelectItem key={m.user_id} value={m.user_id}>{name}</SelectItem>;
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-            </div>
 
-            {/* ── Section: Quotation Details ── */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <Label>Issue Date</Label>
-                <Input type="date" value={form.issue_date ?? ""} onChange={(e) => setForm({ ...form, issue_date: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Valid Until</Label>
-                <Input type="date" value={form.valid_until} onChange={(e) => setForm({ ...form, valid_until: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Source</Label>
-                <Input value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="e.g. Website" />
-              </div>
-              <div className="space-y-1">
-                <Label>Reference</Label>
-                <Input value={form.reference_no} onChange={(e) => setForm({ ...form, reference_no: e.target.value })} placeholder="Ref #" />
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-white border border-gray-200 shadow-sm">
+                <BellRing className="h-4 w-4 text-gray-500 shrink-0" />
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-gray-700">Notify Admin</div>
+                  <div className="text-xs text-gray-500">Send an internal notification when created or sent.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, notify_admin: !f.notify_admin }))}
+                  className={`relative h-6 w-11 rounded-full transition-colors focus:outline-none ${form.notify_admin ? "bg-primary" : "bg-gray-300"}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.notify_admin ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
               </div>
             </div>
 
-            {/* ── Service + Transaction + Assign ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label>Service Type</Label>
-                <Select value={form.service_type ?? ""} onValueChange={(v) => setForm({ ...form, service_type: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select service" /></SelectTrigger>
-                  <SelectContent>{SERVICE_TYPES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Transaction Type</Label>
-                <Select value={form.transaction_type ?? ""} onValueChange={(v) => setForm({ ...form, transaction_type: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                  <SelectContent>{TRANSACTION_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Assigned To (Seller)</Label>
-                <Select value={form.assigned_to ?? ""} onValueChange={(v) => setForm({ ...form, assigned_to: v || null })}>
-                  <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
-                    {employees.map((m) => {
-                      const name = m.users?.full_name || m.users?.email?.split("@")[0] || m.user_id;
-                      return <SelectItem key={m.user_id} value={m.user_id}>{name}</SelectItem>;
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* ── Notify Admin ── */}
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
-              <BellRing className="h-4 w-4 text-muted-foreground shrink-0" />
-              <div className="flex-1">
-                <div className="text-sm font-medium">Notify Admin</div>
-                <div className="text-xs text-muted-foreground">Send an internal notification when created or sent.</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, notify_admin: !f.notify_admin }))}
-                className={`relative h-6 w-11 rounded-full transition-colors focus:outline-none ${form.notify_admin ? "bg-primary" : "bg-muted-foreground/30"}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.notify_admin ? "translate-x-5" : "translate-x-0"}`} />
-              </button>
-            </div>
-
-            {/* ── Line Items ── */}
-            <div className="space-y-2">
+            {/* Line Items */}
+            <div className="space-y-4 pt-4 border-t border-gray-200">
               <div className="flex items-center justify-between">
-                <Label>Line Items</Label>
-                <Button type="button" variant="outline" size="sm" className="h-7 text-xs rounded-lg" onClick={addLine}>
+                <h3 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Line Items</h3>
+                <Button type="button" variant="outline" size="sm" className="h-7 text-xs rounded-lg bg-white" onClick={addLine}>
                   <Plus className="h-3 w-3 mr-1" /> Add Row
                 </Button>
               </div>
-              <div className="border border-border rounded-xl overflow-hidden">
+              <div className="border border-gray-200 shadow-sm rounded-xl overflow-x-auto bg-white">
                 <table className="w-full text-xs">
-                  <thead className="bg-muted/50">
-                    <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                      <th className="px-3 py-2 font-semibold">Description</th>
-                      <th className="px-2 py-2 font-semibold w-20">HSN/SAC</th>
-                      <th className="px-2 py-2 font-semibold w-16">Unit</th>
-                      <th className="px-2 py-2 font-semibold w-14">Qty</th>
-                      <th className="px-2 py-2 font-semibold w-24">Unit Price</th>
-                      <th className="px-2 py-2 font-semibold w-14">Disc%</th>
-                      <th className="px-2 py-2 font-semibold w-24 text-right">Amount</th>
+                  <thead className="bg-gray-50">
+                    <tr className="text-left text-[11px] uppercase tracking-wider text-gray-500">
+                      <th className="px-3 py-2 font-bold">Description</th>
+                      <th className="px-2 py-2 font-bold w-20">HSN/SAC</th>
+                      <th className="px-2 py-2 font-bold w-16">Unit</th>
+                      <th className="px-2 py-2 font-bold w-14">Qty</th>
+                      <th className="px-2 py-2 font-bold w-24">Unit Price</th>
+                      <th className="px-2 py-2 font-bold w-14">Disc%</th>
+                      <th className="px-2 py-2 font-bold w-24 text-right">Amount</th>
                       <th className="px-2 py-2 w-8" />
                     </tr>
                   </thead>
                   <tbody>
                     {form.line_items.map((item, idx) => (
-                      <tr key={idx} className="border-t border-border/50">
+                      <tr key={idx} className="border-t border-gray-100">
                         <td className="px-2 py-1.5">
-                          <Input value={item.description} onChange={(e) => updateLine(idx, "description", e.target.value)} placeholder="Description" className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-input px-1" />
+                          <Input value={item.description} onChange={(e) => updateLine(idx, "description", e.target.value)} placeholder="Description" className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-gray-300 px-1" />
                         </td>
                         <td className="px-2 py-1.5">
-                          <Input value={item.hsn_sac} onChange={(e) => updateLine(idx, "hsn_sac", e.target.value)} placeholder="998361" className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-input px-1 w-18" />
+                          <Input value={item.hsn_sac} onChange={(e) => updateLine(idx, "hsn_sac", e.target.value)} placeholder="998361" className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-gray-300 px-1 w-18" />
                         </td>
                         <td className="px-2 py-1.5">
-                          <Input value={item.unit} onChange={(e) => updateLine(idx, "unit", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-input px-1 w-14" />
+                          <Input value={item.unit} onChange={(e) => updateLine(idx, "unit", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-gray-300 px-1 w-14" />
                         </td>
                         <td className="px-2 py-1.5">
-                          <Input type="number" min={1} value={item.qty} onChange={(e) => updateLine(idx, "qty", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-input px-1 w-12" />
+                          <Input type="number" min={1} value={item.qty} onChange={(e) => updateLine(idx, "qty", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-gray-300 px-1 w-12" />
                         </td>
                         <td className="px-2 py-1.5">
-                          <Input type="number" min={0} value={item.unit_price} onChange={(e) => updateLine(idx, "unit_price", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-input px-1 w-20" />
+                          <Input type="number" min={0} value={item.unit_price} onChange={(e) => updateLine(idx, "unit_price", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-gray-300 px-1 w-20" />
                         </td>
                         <td className="px-2 py-1.5">
-                          <Input type="number" min={0} max={100} value={item.discount} onChange={(e) => updateLine(idx, "discount", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-input px-1 w-12" />
+                          <Input type="number" min={0} max={100} value={item.discount} onChange={(e) => updateLine(idx, "discount", e.target.value)} className="h-7 text-xs border-transparent bg-transparent focus-visible:bg-white focus-visible:border-gray-300 px-1 w-12" />
                         </td>
-                        <td className="px-2 py-1.5 text-right font-semibold">{fmt(lineNet(item))}</td>
+                        <td className="px-2 py-1.5 text-right font-bold text-gray-700">{fmt(lineNet(item))}</td>
                         <td className="px-2 py-1.5">
-                          <button type="button" onClick={() => removeLine(idx)} disabled={form.line_items.length === 1} className="h-6 w-6 rounded-lg grid place-items-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-30">
+                          <button type="button" onClick={() => removeLine(idx)} disabled={form.line_items.length === 1} className="h-6 w-6 rounded-lg grid place-items-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-30">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </td>
@@ -534,62 +726,86 @@ function QuotationsPage() {
               </div>
             </div>
 
-            {/* ── Tax + Notes + Payment ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Label>Notes</Label>
-                  <textarea rows={3} placeholder="Optional notes..." value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 text-sm border border-input rounded-xl bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label>UPI ID</Label>
-                    <Input value={form.upi_id} onChange={(e) => setForm({ ...form, upi_id: e.target.value })} placeholder="name@upi" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Payment Phone</Label>
-                    <Input value={form.payment_phone} onChange={(e) => setForm({ ...form, payment_phone: e.target.value })} placeholder="9999999999" />
-                  </div>
-                </div>
+            {/* Notes & Tax */}
+            <div className="space-y-4 pt-4 border-t border-gray-200">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Tax / IGST Rate (%)</Label>
+                <Input type="number" min={0} max={100} value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: parseFloat(e.target.value) || 0 })} className="bg-white border-gray-200 shadow-sm w-32" />
               </div>
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <Label>Tax / IGST Rate (%)</Label>
-                  <Input type="number" min={0} max={100} value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: parseFloat(e.target.value) || 0 })} />
-                </div>
-                <div className="rounded-xl border border-border/60 p-3 space-y-2 text-sm bg-muted/20">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Untaxed Amount</span><span>{fmt(sub)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>IGST ({form.tax_rate}%)</span><span>{fmt(taxAmt)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-base border-t border-border pt-2">
-                    <span>Total</span><span className="text-primary">{fmt(total)}</span>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Notes</Label>
+                <textarea rows={3} placeholder="Optional notes..." value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 shadow-sm rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none" />
+              </div>
+            </div>
+
+            {/* LIVE PREVIEW EMBED */}
+            <div className="pt-6">
+              <div className="text-center bg-gray-200/60 text-gray-500 text-[10px] font-bold py-2.5 uppercase tracking-widest rounded-t-xl border border-b-0 border-gray-300">
+                Live Preview — Exact PDF Layout
+              </div>
+              <div className="border border-gray-300 rounded-b-xl bg-gray-100 p-2 sm:p-4 overflow-hidden flex justify-center">
+                <div className="w-full max-w-[400px] h-[500px] bg-white rounded-lg shadow-sm border border-gray-200 overflow-y-auto">
+                  {/* We render QuotationPreview inside, but we must pass a prop or use CSS to scale it if needed. For now, it will just scroll. */}
+                  <div className="origin-top scale-[0.8] w-[125%] h-[125%]">
+                     <QuotationPreview quotation={livePreviewMock} onClose={() => {}} embedded />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* ── Status + Submit ── */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+            {/* TOTALS CARD */}
+            <div className="bg-[#1C2331] text-white rounded-2xl p-5 space-y-3 shadow-lg">
+              <h4 className="text-[10px] font-bold text-blue-300/80 uppercase tracking-widest mb-3">Auto-Calculated Totals</h4>
+              <div className="flex justify-between items-center text-sm text-slate-300">
+                <span>Untaxed Amount</span>
+                <span className="font-bold text-white">{fmt(subtotal(form.line_items))}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm text-slate-300">
+                <span>IGST ({form.tax_rate}%)</span>
+                <span className="font-bold text-white">{fmt((subtotal(form.line_items) * form.tax_rate) / 100)}</span>
+              </div>
+              <div className="pt-3 border-t border-slate-700/50 flex justify-between items-center">
+                <span className="font-bold text-base">Grand Total</span>
+                <span className="font-bold text-[#00E676] text-xl">{fmt(subtotal(form.line_items) * (1 + form.tax_rate/100))}</span>
+              </div>
+            </div>
+
+            {/* PAYMENT */}
+            <div className="space-y-4">
+              <h3 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest border-b pb-2">Payment</h3>
               <div className="space-y-1">
-                <Label>Status</Label>
+                <Label className="text-xs font-bold text-gray-700">Payment Communication</Label>
+                <Input value={form.upi_id} onChange={(e) => setForm({ ...form, upi_id: e.target.value })} placeholder="Q-00003" className="bg-white border-gray-200 shadow-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Payment Phone / QR Code Number</Label>
+                <Input value={form.payment_phone} onChange={(e) => setForm({ ...form, payment_phone: e.target.value })} placeholder="9999999999" className="bg-white border-gray-200 shadow-sm" />
+              </div>
+            </div>
+
+            {/* Status & Submit */}
+            <div className="pt-6 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-gray-700">Status</Label>
                 <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as Quotation["status"] })}>
-                  <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-36 bg-white border-gray-200 shadow-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>{["Draft", "Sent"].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="flex gap-2 self-end">
-                <Button variant="outline" onClick={() => { setOpen(false); setForm(defaultForm()); }}>Cancel</Button>
-                <Button onClick={handleCreate} disabled={createQuotation.isPending}>
-                  {createQuotation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating...</> : <><Send className="h-4 w-4 mr-2" />Create Quotation</>}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => { setOpen(false); setForm(defaultForm()); setEditingQuotation(null); }} className="bg-white">
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={createQuotation.isPending || updateQuotation.isPending} className="bg-primary text-white">
+                  {createQuotation.isPending || updateQuotation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : <><Send className="h-4 w-4 mr-2" />{editingQuotation ? "Update Quotation" : "Create Quotation"}</>}
                 </Button>
               </div>
             </div>
+
           </div>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
+
 
       {/* ── Preview ────────────────────────────────────────────────────────── */}
       {preview && <QuotationPreview quotation={preview} onClose={() => setPreview(null)} />}
@@ -598,7 +814,7 @@ function QuotationsPage() {
 }
 
 // ── Invoice Preview ────────────────────────────────────────────────────────────
-function QuotationPreview({ quotation: q, onClose }: { quotation: Quotation; onClose: () => void }) {
+function QuotationPreview({ quotation: q, onClose, embedded }: { quotation: Quotation; onClose?: () => void; embedded?: boolean }) {
   const ef = q.extra_fields ?? {};
   const sub = subtotal(q.line_items);
   const taxAmt = (sub * q.tax_rate) / 100;
@@ -664,24 +880,27 @@ function QuotationPreview({ quotation: q, onClose }: { quotation: Quotation; onC
     setTimeout(() => win.print(), 300);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Modal toolbar */}
+  const content = (
+    <div className={`bg-white flex flex-col ${embedded ? 'w-full h-full' : 'rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh]'}`} onClick={embedded ? undefined : (e) => e.stopPropagation()}>
+      {/* Modal toolbar */}
+      {!embedded && (
         <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
           <span className="font-bold text-base">{q.quotation_number}</span>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs" onClick={handlePrint}>
               <Printer className="h-3.5 w-3.5 mr-1.5" /> Print / PDF
             </Button>
-            <button onClick={onClose} className="h-8 w-8 rounded-full hover:bg-muted grid place-items-center">
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
+            {onClose && (
+              <button onClick={onClose} className="h-8 w-8 rounded-full hover:bg-muted grid place-items-center">
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
           </div>
         </div>
+      )}
 
-        {/* Scrollable invoice body */}
-        <div className="overflow-y-auto flex-1">
+      {/* Scrollable invoice body */}
+      <div className="overflow-y-auto flex-1">
           <div id="q-print" className="p-6 text-sm text-gray-800">
 
             {/* ── Header: Logo + Company Address ── */}
@@ -853,6 +1072,13 @@ function QuotationPreview({ quotation: q, onClose }: { quotation: Quotation; onC
           </div>
         </div>
       </div>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      {content}
     </div>
   );
 }

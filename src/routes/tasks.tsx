@@ -161,10 +161,19 @@ function TasksPage() {
   const isClient = workspace?.role === "client";
   const clientNameForFilter = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
 
-  const clientNamesSet = new Set(clients.map(c => c.name));
+  const closedClientNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
+  const closedClientEmails = new Set(clients.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
+
+  const clientNamesSet = new Set(clients.filter(c => c.status !== "Closed").map(c => c.name));
   members.filter(m => m.role === 'client').forEach(m => {
     const name = m.users?.full_name || m.users?.email?.split('@')[0];
-    if (name) clientNamesSet.add(name);
+    const email = m.users?.email?.toLowerCase();
+    const isClosedByName = name && closedClientNames.has(name.toLowerCase());
+    const isClosedByEmail = email && closedClientEmails.has(email);
+    
+    if (name && !isClosedByName && !isClosedByEmail) {
+      clientNamesSet.add(name);
+    }
   });
   const allClientNames = Array.from(clientNamesSet).sort();
 
@@ -395,23 +404,52 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
   };
 
   // Helper to render media items (images or links)
-  const renderMedia = (urls: string[] | null) => {
+  const renderMedia = (urls: string[] | null, target: "reference_content" | "completed_work") => {
     if (!urls || urls.length === 0) return <div className="text-muted-foreground text-xs opacity-50 italic">Empty</div>;
     return (
       <div className="flex flex-wrap gap-2 mb-2">
         {urls.map((url, i) => {
           const isImage = url.match(/\.(jpeg|jpg|gif|png|webp)/i) || url.includes("supabase.co");
+          const handleDelete = (e: React.MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (confirm("Remove this item?")) {
+              const updated = urls.filter((_, idx) => idx !== i);
+              updatePost.mutate({ id: post.id, updates: { [target]: updated } });
+            }
+          };
+
           if (isImage) {
             return (
-              <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-16 h-16 rounded overflow-hidden border border-border shrink-0">
-                <img src={url} alt="media" className="w-full h-full object-cover" />
-              </a>
+              <div key={i} className="relative group w-16 h-16 rounded overflow-hidden border border-border shrink-0">
+                <a href={url} target="_blank" rel="noreferrer" className="block w-full h-full">
+                  <img src={url} alt="media" className="w-full h-full object-cover" />
+                </a>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
+                  title="Remove image"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
             );
           }
           return (
-            <a key={i} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline bg-blue-50 px-2 py-1 rounded border border-blue-100">
-              <LinkIcon className="w-3 h-3" /> Link {i+1}
-            </a>
+            <div key={i} className="relative group flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100">
+              <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:underline">
+                <LinkIcon className="w-3 h-3" /> Link {i+1}
+              </a>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="ml-1 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Remove link"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -476,7 +514,7 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
 
       {/* REFERENCE CONTENT */}
       <td className="p-3 border-r border-gray-200 align-top">
-        {renderMedia(post.reference_content)}
+        {renderMedia(post.reference_content, "reference_content")}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 bg-white/50" onClick={() => handleAddLink("reference_content")}>
             <LinkIcon className="w-3 h-3 mr-1" /> Add Link
@@ -490,7 +528,7 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
 
       {/* COMPLETED CONTENT */}
       <td className="p-3 border-r border-gray-200 align-top">
-        {renderMedia(post.completed_work)}
+        {renderMedia(post.completed_work, "completed_work")}
         
         {/* We also show the post.content here (the caption) */}
         <div className="mt-3 mb-2">

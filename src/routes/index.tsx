@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import { PLATFORM_COLOR } from "@/lib/demo-data";
 import { supabase } from "@/lib/supabase";
-import { useCurrentWorkspace, useDashboardStats, useRevenueGraph, usePosts, useClients, useWorkspaceMembers, useMeetings, useSocialAccounts } from "@/lib/queries";
+import { useCurrentWorkspace, useDashboardStats, useRevenueGraph, usePosts, useClients, useWorkspaceMembers, useMeetings, useSocialAccounts, useQuotations } from "@/lib/queries";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "Dashboard — SocialNxt CRM" }] }),
@@ -49,6 +49,7 @@ function Dashboard() {
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: allMeetingsRaw = [] } = useMeetings(workspace?.workspaceId);
   const { data: accounts = [] } = useSocialAccounts(workspace?.workspaceId);
+  const { data: allQuotationsRaw = [] } = useQuotations(workspace?.workspaceId);
 
   const isClient = workspace?.role === "client";
   const clientName = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
@@ -60,6 +61,10 @@ function Dashboard() {
   const allMeetings = isClient
     ? allMeetingsRaw.filter((m) => (m as any).client_id === workspace?.userId)
     : allMeetingsRaw;
+
+  const allQuotations = isClient
+    ? allQuotationsRaw.filter(q => q.client_name?.toLowerCase() === clientName.toLowerCase() && q.status !== "Draft")
+    : allQuotationsRaw;
 
   const clients = isClient
     ? clientsRaw.filter((c) => c.name.toLowerCase() === clientName.toLowerCase())
@@ -109,18 +114,32 @@ function Dashboard() {
     .slice(0, 5);
 
   // ─── Recent Activities (real) ────────────────────────────────────────────────
-  const recentActivities = [...allPosts]
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+  const recentActivities = [
+    ...allPosts.map(p => ({ type: "post", ts: p.updated_at, item: p })),
+    ...allQuotations.map(q => ({ type: "quotation", ts: q.updated_at, item: q }))
+  ]
+    .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
     .slice(0, 5)
-    .map((p) => {
-      // Look up author by author_id for accurate "who did this" name
-      const authorMember = members.find((m) => m.user_id === p.author_id);
-      const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
-      const action = p.status === "published" ? "marked as posted" : p.status === "approved" ? "approved" : p.status === "pending_approval" ? "submitted for approval" : "updated";
-      const diffMs = Date.now() - new Date(p.updated_at).getTime();
-      const diffH = Math.floor(diffMs / 3600000);
-      const when = diffH < 1 ? "Just now" : diffH < 24 ? `${diffH}h ago` : diffH < 48 ? "Yesterday" : `${Math.floor(diffH / 24)}d ago`;
-      return { who, what: `${action} — ${p.topic || p.client_name || "post"}`, when };
+    .map((entry) => {
+      if (entry.type === "post") {
+        const p = entry.item as any;
+        const authorMember = members.find((m) => m.user_id === p.author_id);
+        const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
+        const action = p.status === "published" ? "marked as posted" : p.status === "approved" ? "approved" : p.status === "pending_approval" ? "submitted for approval" : "updated";
+        const diffMs = Date.now() - new Date(p.updated_at).getTime();
+        const diffH = Math.floor(diffMs / 3600000);
+        const when = diffH < 1 ? "Just now" : diffH < 24 ? `${diffH}h ago` : diffH < 48 ? "Yesterday" : `${Math.floor(diffH / 24)}d ago`;
+        return { who, what: `${action} — ${p.topic || p.client_name || "post"}`, when };
+      } else {
+        const q = entry.item as any;
+        const authorMember = members.find((m) => m.user_id === q.created_by);
+        const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
+        const action = q.status === "Sent" ? "sent quotation" : q.status === "Approved" ? "approved quotation" : "updated quotation";
+        const diffMs = Date.now() - new Date(q.updated_at).getTime();
+        const diffH = Math.floor(diffMs / 3600000);
+        const when = diffH < 1 ? "Just now" : diffH < 24 ? `${diffH}h ago` : diffH < 48 ? "Yesterday" : `${Math.floor(diffH / 24)}d ago`;
+        return { who, what: `${action} — ${q.quotation_number}`, when };
+      }
     });
 
   // ─── Upcoming Meetings (real) ────────────────────────────────────────────────
@@ -244,7 +263,7 @@ function Dashboard() {
 
   return (
     <AppShell
-      title={`Good morning, ${workspace?.workspaceName ?? "there"}`}
+      title={`Welcome, ${isClient ? (clientName || "Client") : (workspace?.workspaceName ?? "there")}`}
       subtitle="Here's what's happening across your agency today."
 
     >

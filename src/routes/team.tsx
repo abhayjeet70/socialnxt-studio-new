@@ -11,7 +11,7 @@ import {
   useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember,
   useUpdateProfile, WorkspaceMember, usePosts,
 } from "@/lib/queries";
-import { sendInvite } from "@/server/invite";
+import { sendInvite, createAccount } from "@/server/invite";
 import React, { useState, useMemo } from "react";
 import { toast } from "sonner";
 import {
@@ -71,7 +71,10 @@ function TeamPage() {
   const { data: posts = [] } = usePosts(workspace?.workspaceId);
 
   const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [inviteMethod, setInviteMethod] = useState<"link" | "create">("link");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
   const [inviteRole, setInviteRole] = useState<"employee" | "client" | "admin">("employee");
   const [isSending, setIsSending] = useState(false);
   const [selectedMember, setSelectedMember] = useState<WorkspaceMember | null>(null);
@@ -113,15 +116,24 @@ function TeamPage() {
     if (!workspace?.workspaceId) return;
     setIsSending(true);
     try {
-      await sendInvite({
-        data: { email: inviteEmail, role: inviteRole, workspaceId: workspace.workspaceId },
-      });
-      toast.success(`Invite sent to ${inviteEmail}!`);
+      if (inviteMethod === "link") {
+        await sendInvite({
+          data: { email: inviteEmail, role: inviteRole, workspaceId: workspace.workspaceId },
+        });
+        toast.success(`Invite sent to ${inviteEmail}!`);
+      } else {
+        await createAccount({
+          data: { name: createName, email: inviteEmail, password: createPassword, role: inviteRole, workspaceId: workspace.workspaceId },
+        });
+        toast.success(`Account created for ${inviteEmail}!`);
+      }
       setIsInviteOpen(false);
       setInviteEmail("");
+      setCreateName("");
+      setCreatePassword("");
       setInviteRole("employee");
     } catch (err: any) {
-      toast.error("Failed to send invite: " + (err.message || "Unknown error"));
+      toast.error(inviteMethod === "link" ? "Failed to send invite: " : "Failed to create account: " + (err.message || "Unknown error"));
     } finally {
       setIsSending(false);
     }
@@ -133,42 +145,69 @@ function TeamPage() {
       subtitle="Everyone in your workspace, their roles and active workload."
       actions={
         isAdmin ? (
-          <Button className="rounded-xl h-10" onClick={() => setIsInviteOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Invite Member
+          <Button className="rounded-xl h-10" onClick={() => { setIsInviteOpen(true); setInviteMethod("link"); }}>
+            <Plus className="h-4 w-4 mr-1" /> Add Member
           </Button>
         ) : null
       }
     >
       {/* Invite Dialog */}
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Invite a Team Member</DialogTitle>
-            <DialogDescription>Add a new team member or client to collaborate on content, approvals, and campaigns.</DialogDescription>
+            <DialogTitle>Add a Team Member</DialogTitle>
+            <DialogDescription>Invite a user via email link or create their account directly.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSendInvite} className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="invite-email">Email Address</Label>
-              <Input id="invite-email" type="email" required placeholder="colleague@example.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as any)}>
-                <SelectTrigger id="invite-role"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="employee">Employee</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {inviteRole === "client" ? "Clients can view and approve content on the calendar." : inviteRole === "admin" ? "Admins have full access to the workspace." : "Employees can create and manage content."}
-              </p>
-            </div>
-            <Button type="submit" className="w-full" disabled={isSending}>
-              {isSending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending Invite...</> : <><Mail className="h-4 w-4 mr-2" /> Send Invite Email</>}
-            </Button>
-          </form>
+
+          <Tabs value={inviteMethod} onValueChange={(v) => setInviteMethod(v as any)} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="link">Invite via Link</TabsTrigger>
+              <TabsTrigger value="create">Create Account</TabsTrigger>
+            </TabsList>
+            
+            <form onSubmit={handleSendInvite} className="space-y-4 pt-4 mt-2">
+              {inviteMethod === "create" && (
+                <div className="space-y-2">
+                  <Label htmlFor="create-name">Full Name</Label>
+                  <Input id="create-name" required placeholder="John Doe" value={createName} onChange={(e) => setCreateName(e.target.value)} />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="invite-email">Email Address</Label>
+                <Input id="invite-email" type="email" required placeholder="colleague@example.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+              </div>
+
+              {inviteMethod === "create" && (
+                <div className="space-y-2">
+                  <Label htmlFor="create-password">Password</Label>
+                  <Input id="create-password" type="password" required minLength={6} placeholder="Min 6 characters" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="invite-role">Role</Label>
+                <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as any)}>
+                  <SelectTrigger id="invite-role"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="employee">Employee</SelectItem>
+                    <SelectItem value="client">Client</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {inviteRole === "client" ? "Clients can view and approve content on the calendar." : "Employees can create and manage content."}
+                </p>
+              </div>
+
+              <Button type="submit" className="w-full" disabled={isSending}>
+                {isSending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {inviteMethod === "link" ? "Sending..." : "Creating..."}</>
+                ) : (
+                  inviteMethod === "link" ? <><Mail className="h-4 w-4 mr-2" /> Send Invite Link</> : <><UserCheck className="h-4 w-4 mr-2" /> Create Account</>
+                )}
+              </Button>
+            </form>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -233,7 +272,7 @@ function TeamPage() {
           <TabsContent value="performance">
             <div className="space-y-6">
               {/* Team Overview Metrics */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <MetricCard
                   title="Total Tasks"
                   value={teamMetrics.total}
@@ -427,7 +466,7 @@ function MemberProfileModal({
 
         {/* Stats */}
         <div className="px-6 py-5 border-b">
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div className="rounded-xl bg-muted/50 p-4 text-center">
               <div className="text-2xl font-bold">{total}</div>
               <div className="text-xs text-muted-foreground mt-0.5">Tasks Assigned</div>

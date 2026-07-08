@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Download, Check, X, Plus, FileText, Loader2,
-  Paperclip, Eye, ExternalLink,
+  Paperclip, Eye, ExternalLink, Edit3, Trash2
 } from "lucide-react";
 import { useState, useRef } from "react";
 import {
-  useCurrentWorkspace, useProposals, useCreateProposal,
+  useCurrentWorkspace, useProposals, useCreateProposal, useUpdateProposal,
   useUpdateProposalStatus, useDeleteProposal, useClients, Proposal,
   uploadProposalPDF, useWorkspaceMembers
 } from "@/lib/queries";
@@ -41,6 +41,7 @@ function ProposalsPage() {
   const { data: clients = [] } = useClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const createProposal = useCreateProposal();
+  const updateProposal = useUpdateProposal();
   const updateStatus = useUpdateProposalStatus();
   const deleteProposal = useDeleteProposal();
 
@@ -49,19 +50,31 @@ function ProposalsPage() {
   const canEdit = workspace?.role === "admin" || workspace?.role === "employee";
 
   // Combine clients from clients table with actual workspace members who are clients
-  const clientNames = new Set(clients.map(c => c.name));
+  const closedClientNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
+  const closedClientEmails = new Set(clients.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
+
+  const clientNames = new Set(clients.filter(c => c.status !== "Closed").map(c => c.name));
   members.filter(m => m.role === 'client').forEach(m => {
     const name = m.users?.full_name || m.users?.email?.split('@')[0];
-    if (name) clientNames.add(name);
+    const email = m.users?.email?.toLowerCase();
+    const isClosedByName = name && closedClientNames.has(name.toLowerCase());
+    const isClosedByEmail = email && closedClientEmails.has(email);
+    
+    if (name && !isClosedByName && !isClosedByEmail) {
+      clientNames.add(name);
+    }
   });
   const allClientNames = Array.from(clientNames).sort();
 
-  // New Proposal Dialog state
   const [open, setOpen] = useState(false);
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [form, setForm] = useState({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterClient, setFilterClient] = useState<string>("all");
 
   const handlePdfSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,7 +90,7 @@ function ProposalsPage() {
     setPdfFile(file);
   };
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!form.title || !form.client_name || !form.amount) {
       toast.error("Please fill all required fields.");
       return;
@@ -87,7 +100,7 @@ function ProposalsPage() {
     if (!user) return;
 
     setUploadingPdf(true);
-    let pdfUrl: string | null = null;
+    let pdfUrl: string | null = editingProposal ? editingProposal.pdf_url : null;
     try {
       if (pdfFile) {
         pdfUrl = await uploadProposalPDF(pdfFile);
@@ -99,27 +112,65 @@ function ProposalsPage() {
     }
     setUploadingPdf(false);
 
-    createProposal.mutate(
-      {
-        workspace_id: workspace.workspaceId,
-        created_by: user.id,
-        title: form.title,
-        client_name: form.client_name,
-        amount: parseFloat(form.amount),
-        notes: form.notes || null,
-        status: form.status as Proposal["status"],
-        pdf_url: pdfUrl,
-      },
-      {
-        onSuccess: () => {
-          toast.success("Proposal created!");
-          setOpen(false);
-          setForm({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
-          setPdfFile(null);
+    if (editingProposal) {
+      updateProposal.mutate(
+        {
+          id: editingProposal.id,
+          workspace_id: workspace.workspaceId,
+          title: form.title,
+          client_name: form.client_name,
+          amount: parseFloat(form.amount),
+          notes: form.notes || null,
+          status: form.status as Proposal["status"],
+          pdf_url: pdfUrl,
         },
-        onError: (e) => toast.error("Failed: " + e.message),
-      }
-    );
+        {
+          onSuccess: () => {
+            toast.success("Proposal updated!");
+            setOpen(false);
+            setEditingProposal(null);
+            setForm({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
+            setPdfFile(null);
+          },
+          onError: (e) => toast.error("Failed: " + e.message),
+        }
+      );
+    } else {
+      createProposal.mutate(
+        {
+          workspace_id: workspace.workspaceId,
+          created_by: user.id,
+          title: form.title,
+          client_name: form.client_name,
+          amount: parseFloat(form.amount),
+          notes: form.notes || null,
+          status: form.status as Proposal["status"],
+          pdf_url: pdfUrl,
+        },
+        {
+          onSuccess: () => {
+            toast.success("Proposal created!");
+            setOpen(false);
+            setForm({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
+            setPdfFile(null);
+          },
+          onError: (e) => toast.error("Failed: " + e.message),
+        }
+      );
+    }
+  };
+
+  const handleEdit = (p: Proposal) => {
+    setEditingProposal(p);
+    setForm({
+      title: p.title,
+      client_name: p.client_name,
+      amount: String(p.amount),
+      notes: p.notes || "",
+      status: p.status,
+    });
+    setPdfFile(null);
+    setOpen(true);
   };
 
   const handleStatusChange = (proposal: Proposal, newStatus: string) => {
@@ -150,13 +201,19 @@ function ProposalsPage() {
     );
   };
 
-  // Filter proposals for clients — only show proposals addressed to them (and hide Drafts)
-  const visibleProposals = isClient
+  // Filter proposals
+  let visibleProposals = isClient
     ? proposals.filter((p) => {
         const clientName = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
         return p.client_name?.toLowerCase() === clientName.toLowerCase() && p.status !== "Draft";
       })
     : proposals;
+
+  visibleProposals = visibleProposals.filter(p => {
+    if (filterStatus !== "all" && p.status !== filterStatus) return false;
+    if (!isClient && filterClient !== "all" && p.client_name !== filterClient) return false;
+    return true;
+  });
 
   const handleBulkDownload = () => {
     if (visibleProposals.length === 0) return toast.info("No proposals to download.");
@@ -209,7 +266,12 @@ ${p.notes || "No additional notes."}
             <span className="hidden sm:inline ml-2">Bulk Download</span>
           </Button>
           {canEdit && (
-            <Button className="rounded-xl h-10" onClick={() => setOpen(true)}>
+            <Button className="rounded-xl h-10" onClick={() => {
+              setEditingProposal(null);
+              setForm({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
+              setPdfFile(null);
+              setOpen(true);
+            }}>
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline ml-1">New Proposal</span>
             </Button>
@@ -218,6 +280,38 @@ ${p.notes || "No additional notes."}
       }
     >
       <div className="card-soft p-4 sm:p-5">
+        {proposals.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">Status</Label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-8 w-[120px] text-xs"><SelectValue placeholder="All" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  {STATUSES.map((s) => {
+                    if (isClient && s === "Draft") return null;
+                    return <SelectItem key={s} value={s}>{s}</SelectItem>;
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            {!isClient && allClientNames.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">Client</Label>
+                <Select value={filterClient} onValueChange={setFilterClient}>
+                  <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue placeholder="All Clients" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Clients</SelectItem>
+                    {allClientNames.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="py-20 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : visibleProposals.length === 0 ? (
@@ -352,15 +446,24 @@ ${p.notes || "No additional notes."}
                           </button>
                         )}
 
-                        {/* Admin delete */}
+                        {/* Admin delete & edit */}
                         {isAdmin && (
-                          <button
-                            title="Delete"
-                            onClick={() => handleDelete(p)}
-                            className="h-8 w-8 rounded-lg hover:bg-[#EF4444]/10 text-[#B91C1C] grid place-items-center"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
+                          <>
+                            <button
+                              title="Edit"
+                              onClick={() => handleEdit(p)}
+                              className="h-8 w-8 rounded-lg hover:bg-muted text-muted-foreground grid place-items-center"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                            <button
+                              title="Delete"
+                              onClick={() => handleDelete(p)}
+                              className="h-8 w-8 rounded-lg hover:bg-[#EF4444]/10 text-[#B91C1C] grid place-items-center"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -372,12 +475,15 @@ ${p.notes || "No additional notes."}
         )}
       </div>
 
-      {/* New Proposal Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md w-[95vw] max-w-[95vw] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>New Proposal</DialogTitle>
-            <DialogDescription>Send a branded social media proposal — attach your PDF deck for the client to review and sign off.</DialogDescription>
+            <DialogTitle>{editingProposal ? "Edit Proposal" : "New Proposal"}</DialogTitle>
+            <DialogDescription>
+              {editingProposal 
+                ? "Update your proposal details and optionally replace the PDF." 
+                : "Send a branded social media proposal — attach your PDF deck for the client to review and sign off."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="space-y-1">
@@ -438,8 +544,11 @@ ${p.notes || "No additional notes."}
                   </div>
                 ) : (
                   <div>
-                    <div className="text-sm text-muted-foreground">Upload PDF proposal</div>
+                    <div className="text-sm text-muted-foreground">Upload new PDF</div>
                     <div className="text-[11px] text-muted-foreground/60">PDF only, max 20 MB</div>
+                    {editingProposal?.pdf_url && !pdfFile && (
+                      <div className="text-xs text-primary mt-1 truncate">Current file exists. Upload new to replace.</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -453,13 +562,13 @@ ${p.notes || "No additional notes."}
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => { setOpen(false); setPdfFile(null); }}>Cancel</Button>
-              <Button onClick={handleCreate} disabled={createProposal.isPending || uploadingPdf}>
+              <Button variant="outline" onClick={() => { setOpen(false); setPdfFile(null); setEditingProposal(null); }}>Cancel</Button>
+              <Button onClick={handleSave} disabled={createProposal.isPending || updateProposal.isPending || uploadingPdf}>
                 {uploadingPdf ? (
                   <><Loader2 className="h-4 w-4 animate-spin mr-2" />Uploading PDF...</>
-                ) : createProposal.isPending ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating...</>
-                ) : "Create Proposal"}
+                ) : createProposal.isPending || updateProposal.isPending ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</>
+                ) : editingProposal ? "Update Proposal" : "Create Proposal"}
               </Button>
             </div>
           </div>

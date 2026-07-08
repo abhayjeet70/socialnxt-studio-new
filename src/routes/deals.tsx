@@ -3,7 +3,7 @@ import { useState, useRef } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical, Pencil, Download } from "lucide-react";
-import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useClients, useUpdateDeal, Deal } from "@/lib/queries";
+import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useActiveClients, useUpdateDeal, Deal } from "@/lib/queries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +29,7 @@ const STAGE_COLOR: Record<string, string> = {
 function DealsPage() {
   const { data: workspace } = useCurrentWorkspace();
   const { data: deals = [], isLoading } = useDeals(workspace?.workspaceId);
-  const { data: clients = [] } = useClients(workspace?.workspaceId);
+  const { data: clients = [] } = useActiveClients(workspace?.workspaceId);
   const createDeal = useCreateDeal();
   const updateStage = useUpdateDealStage();
   const deleteDeal = useDeleteDeal();
@@ -410,7 +410,7 @@ function DealsPage() {
 
       {/* Add Deal Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Add New Deal</DialogTitle>
             <DialogDescription>Track a new social media retainer, campaign, or content deal for a client.</DialogDescription>
@@ -423,7 +423,7 @@ function DealsPage() {
                   <SelectValue placeholder="Select a client..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {clients.map((c) => (
+                  {clients.filter(c => c.status !== "Closed").map((c) => (
                     <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -433,7 +433,7 @@ function DealsPage() {
               <Label>Project Name</Label>
               <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Amount (₹)</Label>
                 <Input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 50000" />
@@ -453,7 +453,7 @@ function DealsPage() {
 
       {/* Edit Deal Dialog */}
       <Dialog open={!!editDealTarget} onOpenChange={(open) => !open && setEditDealTarget(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Edit Deal</DialogTitle>
             <DialogDescription>Edit the scope, value, or stage of this social media deal.</DialogDescription>
@@ -466,7 +466,7 @@ function DealsPage() {
                   <SelectValue placeholder="Select a client..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {clients.map((c) => (
+                  {clients.filter(c => c.status !== "Closed").map((c) => (
                     <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -476,7 +476,7 @@ function DealsPage() {
               <Label>Project Name</Label>
               <Input value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Amount (₹)</Label>
                 <Input type="number" min="0" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} required placeholder="e.g. 50000" />

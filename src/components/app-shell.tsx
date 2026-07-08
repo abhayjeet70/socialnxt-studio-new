@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
-import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useProposals, useWorkspaceMembers } from "@/lib/queries";
+import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useProposals, useWorkspaceMembers, useQuotations } from "@/lib/queries";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -83,7 +83,7 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
       </Link>
 
       {/* Nav links */}
-      <nav className="px-3 pb-6 flex-1 overflow-y-auto">
+      <nav className="px-3 pb-6 flex-1 overflow-y-auto scrollbar-hide">
         <div className="px-3 pt-4 pb-2 text-[11px] uppercase tracking-wider text-sidebar-muted">Workspace</div>
         {visibleNav.map((item) => {
           const active = item.exact ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + "/");
@@ -139,6 +139,7 @@ export function AppShell({ children, title, subtitle, actions }: {
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: posts = [] } = usePosts(workspace?.workspaceId);
   const { data: proposals = [] } = useProposals(workspace?.workspaceId);
+  const { data: quotations = [] } = useQuotations(workspace?.workspaceId);
 
   const query = globalSearch.toLowerCase();
   
@@ -152,9 +153,10 @@ export function AppShell({ children, title, subtitle, actions }: {
     ].filter(c => c.name.toLowerCase().includes(query) || c.desc.toLowerCase().includes(query)),
     posts: posts.filter(p => (p.topic || "").toLowerCase().includes(query) || (p.client_name || "").toLowerCase().includes(query)),
     proposals: proposals.filter(p => p.title.toLowerCase().includes(query) || p.client_name.toLowerCase().includes(query)),
-  } : { clients: [], posts: [], proposals: [] };
+    quotations: quotations.filter(q => q.quotation_number.toLowerCase().includes(query) || q.client_name.toLowerCase().includes(query)),
+  } : { clients: [], posts: [], proposals: [], quotations: [] };
 
-  const hasResults = query && (searchResults.clients.length > 0 || searchResults.posts.length > 0 || searchResults.proposals.length > 0);
+  const hasResults = query && (searchResults.clients.length > 0 || searchResults.posts.length > 0 || searchResults.proposals.length > 0 || searchResults.quotations.length > 0);
   const showDropdown = searchFocused && query.length > 0;
 
   const recentActivities = [
@@ -175,6 +177,15 @@ export function AppShell({ children, title, subtitle, actions }: {
       color: p.status === "Approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
       icon: FileText,
       link: "/proposals",
+    })),
+    ...quotations.filter(q => q.status !== "Draft").slice(0, 5).map(q => ({
+      ts: q.updated_at,
+      who: q.client_name,
+      action: q.status === "Sent" ? "sent" : q.status === "Approved" ? "approved" : "updated",
+      subject: "Quotation " + q.quotation_number,
+      color: q.status === "Sent" ? "bg-purple-100 text-purple-700" : q.status === "Approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
+      icon: Receipt,
+      link: "/quotations",
     }))
   ]
     .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
@@ -238,13 +249,23 @@ export function AppShell({ children, title, subtitle, actions }: {
               ))}
             </div>
           )}
+          {searchResults.quotations.length > 0 && (
+            <div>
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quotations</div>
+              {searchResults.quotations.map(q => (
+                <Link key={q.id} to="/quotations" onClick={onClose} className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                  {q.quotation_number} <span className="text-muted-foreground ml-2 text-xs">for {q.client_name}</span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 
   return (
-    <div className="min-h-screen w-full bg-[oklch(0.985_0.005_255)] flex">
+    <div className="h-screen w-full bg-[oklch(0.985_0.005_255)] flex overflow-hidden">
 
       {/* ── Desktop Sidebar ────────────────────────────────────────────────── */}
       <aside className="hidden lg:flex w-64 shrink-0 flex-col">
@@ -312,7 +333,7 @@ export function AppShell({ children, title, subtitle, actions }: {
       )}
 
       {/* ── Main column ───────────────────────────────────────────────────── */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col overflow-y-auto">
         {/* Topbar */}
         <header className="sticky top-0 z-20 bg-white/85 backdrop-blur border-b border-border">
           <div className="h-16 px-4 sm:px-6 lg:px-8 flex items-center gap-3">
