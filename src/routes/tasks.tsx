@@ -2,13 +2,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { AppShell } from "@/components/app-shell";
 import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers } from "@/lib/queries";
-import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download } from "lucide-react";
+import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download, Undo, X } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+
+export type UndoAction = {
+  description: string;
+  undo: () => Promise<void>;
+};
 
 // SVG brand logos for social platforms
 function PlatformLogo({ platform, size = 14 }: { platform: string; size?: number }) {
@@ -137,6 +144,36 @@ function TasksPage() {
   const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
   const createPost = useCreatePost();
   
+  const queryClient = useQueryClient();
+  const [newlyAddedPostId, setNewlyAddedPostId] = useState<string | null>(null);
+  const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
+
+  const handleUndo = async () => {
+    if (!undoAction) return;
+    try {
+      await undoAction.undo();
+      toast.success(`Undid: ${undoAction.description}`);
+      setUndoAction(null);
+    } catch (e: any) {
+      toast.error("Undo failed: " + e.message);
+    }
+  };
+
+  useEffect(() => {
+    if (newlyAddedPostId) {
+      const row = document.getElementById(`post-row-${newlyAddedPostId}`);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.style.transition = 'background-color 0.5s';
+        row.style.backgroundColor = '#f3e8ff'; // highlight color
+        setTimeout(() => {
+          row.style.backgroundColor = '';
+        }, 1500);
+        setNewlyAddedPostId(null);
+      }
+    }
+  }, [posts, newlyAddedPostId]);
+
   const isLoading = isLoadingPosts || isLoadingClients || isLoadingMembers;
 
   const handleAddRow = () => {
@@ -150,7 +187,23 @@ function TasksPage() {
       topic: "",
       content_type: "",
     }, {
-      onSuccess: () => toast.success("Added new row!"),
+      onSuccess: (data) => {
+        toast.success("Added new row!");
+        if (data && data.id) {
+          setNewlyAddedPostId(data.id);
+          setUndoAction({
+            description: "Add Row",
+            undo: async () => {
+              await supabase.from("posts").delete().eq("id", data.id);
+              queryClient.invalidateQueries({ queryKey: ["posts"] });
+            }
+          });
+        } else {
+          setTimeout(() => {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          }, 500);
+        }
+      },
       onError: (err: any) => {
         console.error("Add Row Error:", err);
         toast.error("Error adding row: " + (err.message || "Unknown error"));
@@ -180,6 +233,8 @@ function TasksPage() {
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>("All Clients");
   const [selectedPlatformFilter, setSelectedPlatformFilter] = useState<string>("All Platforms");
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>("All Dates");
+  const [customDateFrom, setCustomDateFrom] = useState<string>("");
+  const [customDateTo, setCustomDateTo] = useState<string>("");
 
   const sortedPosts = [...posts]
     .filter((p) => {
@@ -209,6 +264,17 @@ function TasksPage() {
           if (postDay < today || postDay > nextWeek) return false;
         } else if (selectedDateFilter === "This Month") {
           if (postDate.getMonth() !== now.getMonth() || postDate.getFullYear() !== now.getFullYear()) return false;
+        } else if (selectedDateFilter === "Custom Date") {
+          if (customDateFrom) {
+            const from = new Date(customDateFrom);
+            from.setHours(0, 0, 0, 0);
+            if (postDay < from) return false;
+          }
+          if (customDateTo) {
+            const to = new Date(customDateTo);
+            to.setHours(23, 59, 59, 999);
+            if (postDay > to) return false;
+          }
         }
       }
 
@@ -256,9 +322,18 @@ function TasksPage() {
                 <SelectItem value="Today">Today</SelectItem>
                 <SelectItem value="This Week">This Week</SelectItem>
                 <SelectItem value="This Month">This Month</SelectItem>
+                <SelectItem value="Custom Date">Custom Date</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          {selectedDateFilter === "Custom Date" && (
+            <div className="flex items-center gap-1 bg-white rounded-xl border border-input h-10 px-2 shadow-sm text-xs sm:text-sm">
+              <span className="text-muted-foreground font-medium pl-1">From</span>
+              <input type="date" value={customDateFrom} onChange={e => setCustomDateFrom(e.target.value)} className="bg-transparent border-none outline-none focus:ring-0 text-foreground w-[110px]" />
+              <span className="text-muted-foreground font-medium px-1 border-l border-border/50">To</span>
+              <input type="date" value={customDateTo} onChange={e => setCustomDateTo(e.target.value)} className="bg-transparent border-none outline-none focus:ring-0 text-foreground w-[110px]" />
+            </div>
+          )}
           <div className="w-36 sm:w-44">
             <Select value={selectedPlatformFilter} onValueChange={setSelectedPlatformFilter}>
               <SelectTrigger className="h-10 rounded-xl bg-white border-input text-xs sm:text-sm">
@@ -292,10 +367,22 @@ function TasksPage() {
             <span className="hidden sm:inline">Export</span>
           </Button>
           {!isClient && (
-            <Button onClick={handleAddRow} disabled={!workspace} className="rounded-xl h-10">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Row
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                onClick={handleUndo} 
+                disabled={!undoAction}
+                className={`rounded-xl h-10 border-input ${undoAction ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50 border-amber-200' : 'text-gray-400'}`} 
+                title={undoAction ? `Undo ${undoAction.description}` : "Nothing to undo"}
+              >
+                <Undo className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Undo</span>
+              </Button>
+              <Button onClick={handleAddRow} disabled={!workspace} className="rounded-xl h-10">
+                <Plus className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Add Row</span>
+              </Button>
+            </div>
           )}
         </div>
       }
@@ -323,7 +410,7 @@ function TasksPage() {
               </thead>
               <tbody>
                 {sortedPosts.map((post, idx) => (
-                  <TaskRow key={post.id} post={post} index={idx} isClient={isClient} allClientNames={allClientNames} members={members} />
+                  <TaskRow key={post.id} post={post} index={idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} />
                 ))}
                 {sortedPosts.length === 0 && (
                   <tr>
@@ -342,7 +429,8 @@ function TasksPage() {
 }
 
 // Separate component for each row so they manage their own local edit state
-function TaskRow({ post, index, isClient, allClientNames, members }: { post: Post; index: number; isClient?: boolean; allClientNames: string[]; members: any[] }) {
+function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction }: { post: Post; index: number; isClient?: boolean; allClientNames: string[]; members: any[]; setUndoAction: (action: UndoAction) => void }) {
+  const queryClient = useQueryClient();
   const { data: workspace } = useCurrentWorkspace();
   const updatePost = useUpdatePostDetails();
   const updateStatus = useUpdatePostStatus();
@@ -414,8 +502,19 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
             e.preventDefault();
             e.stopPropagation();
             if (confirm("Remove this item?")) {
+              const previous = urls;
               const updated = urls.filter((_, idx) => idx !== i);
-              updatePost.mutate({ id: post.id, updates: { [target]: updated } });
+              updatePost.mutate({ id: post.id, updates: { [target]: updated } }, {
+                onSuccess: () => {
+                  setUndoAction({
+                    description: "Remove Media/Link",
+                    undo: async () => {
+                      await supabase.from("posts").update({ [target]: previous }).eq("id", post.id);
+                      queryClient.invalidateQueries({ queryKey: ["posts"] });
+                    }
+                  });
+                }
+              });
             }
           };
 
@@ -428,10 +527,10 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
                 <button
                   type="button"
                   onClick={handleDelete}
-                  className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
+                  className="absolute top-1 right-1 bg-black/50 hover:bg-red-600 text-white rounded-full p-1 transition-colors backdrop-blur-sm shadow-sm"
                   title="Remove image"
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <X className="w-3 h-3" />
                 </button>
               </div>
             );
@@ -444,10 +543,10 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
               <button
                 type="button"
                 onClick={handleDelete}
-                className="ml-1 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="ml-1 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-full p-0.5 transition-colors shrink-0"
                 title="Remove link"
               >
-                <Trash2 className="w-3 h-3" />
+                <X className="w-3 h-3" />
               </button>
             </div>
           );
@@ -457,7 +556,7 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
   };
 
   return (
-    <tr className={`border-b border-gray-200 ${rowColor} hover:bg-gray-50 transition-colors`}>
+    <tr id={`post-row-${post.id}`} className={`border-b border-gray-200 ${rowColor} hover:bg-gray-50 transition-colors`}>
       <td className="p-0 border-r border-gray-200 align-top">
         <input 
           type="date"
@@ -693,7 +792,18 @@ function TaskRow({ post, index, isClient, allClientNames, members }: { post: Pos
                 className="h-7 w-full text-red-500 hover:text-red-700 hover:bg-red-50 mt-1"
                 onClick={() => {
                   if (confirm("Are you sure you want to delete this row?")) {
-                    deletePost.mutate(post.id);
+                    const postCopy = { ...post };
+                    deletePost.mutate(post.id, {
+                      onSuccess: () => {
+                        setUndoAction({
+                          description: "Delete Row",
+                          undo: async () => {
+                            await supabase.from("posts").insert(postCopy);
+                            queryClient.invalidateQueries({ queryKey: ["posts"] });
+                          }
+                        });
+                      }
+                    });
                   }
                 }}
                 disabled={deletePost.isPending}

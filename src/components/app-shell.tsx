@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
-import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useProposals, useWorkspaceMembers, useQuotations } from "@/lib/queries";
+import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useProposals, useWorkspaceMembers, useQuotations, useIssues } from "@/lib/queries";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -140,6 +140,7 @@ export function AppShell({ children, title, subtitle, actions }: {
   const { data: posts = [] } = usePosts(workspace?.workspaceId);
   const { data: proposals = [] } = useProposals(workspace?.workspaceId);
   const { data: quotations = [] } = useQuotations(workspace?.workspaceId);
+  const { data: issues = [] } = useIssues(workspace?.workspaceId);
 
   const query = globalSearch.toLowerCase();
   
@@ -161,15 +162,33 @@ export function AppShell({ children, title, subtitle, actions }: {
 
   const recentActivities = [
     ...posts.slice(0, 5).map(p => ({
+      ts: p.created_at || p.updated_at,
+      who: p.client_name || "Someone",
+      action: "added",
+      subject: "Task " + (p.topic || ""),
+      color: "bg-blue-100 text-blue-700",
+      icon: ListTodo,
+      link: "/tasks",
+    })),
+    ...posts.filter(p => p.updated_at && p.updated_at !== p.created_at).slice(0, 5).map(p => ({
       ts: p.updated_at,
       who: p.client_name || "Someone",
       action: p.status === "approved" ? "approved" : "updated",
-      subject: p.topic || "a task",
+      subject: "Task " + (p.topic || ""),
       color: p.status === "approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
       icon: p.status === "approved" ? CheckCircle2 : ListTodo,
       link: "/tasks",
     })),
     ...proposals.slice(0, 5).map(p => ({
+      ts: p.created_at || p.updated_at,
+      who: p.client_name || "Someone",
+      action: "added",
+      subject: "Proposal " + p.title,
+      color: "bg-blue-100 text-blue-700",
+      icon: FileText,
+      link: "/proposals",
+    })),
+    ...proposals.filter(p => p.updated_at && p.updated_at !== p.created_at).slice(0, 5).map(p => ({
       ts: p.updated_at,
       who: p.client_name,
       action: p.status === "Approved" ? "approved" : "updated",
@@ -178,7 +197,16 @@ export function AppShell({ children, title, subtitle, actions }: {
       icon: FileText,
       link: "/proposals",
     })),
-    ...quotations.filter(q => q.status !== "Draft").slice(0, 5).map(q => ({
+    ...quotations.slice(0, 5).map(q => ({
+      ts: q.created_at || q.updated_at,
+      who: q.client_name || "Someone",
+      action: "added",
+      subject: "Quotation " + q.quotation_number,
+      color: "bg-purple-100 text-purple-700",
+      icon: Receipt,
+      link: "/quotations",
+    })),
+    ...quotations.filter(q => q.status !== "Draft" && q.updated_at && q.updated_at !== q.created_at).slice(0, 5).map(q => ({
       ts: q.updated_at,
       who: q.client_name,
       action: q.status === "Sent" ? "sent" : q.status === "Approved" ? "approved" : "updated",
@@ -186,6 +214,24 @@ export function AppShell({ children, title, subtitle, actions }: {
       color: q.status === "Sent" ? "bg-purple-100 text-purple-700" : q.status === "Approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
       icon: Receipt,
       link: "/quotations",
+    })),
+    ...issues.slice(0, 5).map(i => ({
+      ts: i.created_at || i.updated_at,
+      who: i.client_name || "Someone",
+      action: "reported",
+      subject: "Issue " + (i.title || ""),
+      color: "bg-red-100 text-red-700",
+      icon: AlertOctagon,
+      link: "/issues",
+    })),
+    ...issues.filter(i => i.updated_at && i.updated_at !== i.created_at).slice(0, 5).map(i => ({
+      ts: i.updated_at,
+      who: i.client_name || "Someone",
+      action: i.status === "Resolved" ? "resolved" : "updated",
+      subject: "Issue " + (i.title || ""),
+      color: i.status === "Resolved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700",
+      icon: AlertOctagon,
+      link: "/issues",
     }))
   ]
     .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
@@ -448,13 +494,13 @@ export function AppShell({ children, title, subtitle, actions }: {
         </header>
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 lg:py-8 pb-24 lg:pb-8">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl sm:text-[28px] font-bold tracking-tight text-foreground">{title}</h1>
+          <div className="flex flex-row flex-wrap justify-between items-end gap-y-4 gap-x-8 mb-6">
+            <div className="flex-1 min-w-[280px]">
+              <h1 className="text-2xl sm:text-[28px] font-bold tracking-tight text-foreground">{title}</h1>
               {/* Subtitle hidden on mobile to prevent layout overflow */}
               {subtitle && <p className="hidden sm:block mt-1 text-sm text-muted-foreground">{subtitle}</p>}
             </div>
-            {actions && <div className="shrink-0 flex items-center gap-2 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 w-full sm:w-auto">{actions}</div>}
+            {actions && <div className="shrink-0 max-w-full overflow-x-auto pb-1">{actions}</div>}
           </div>
           {children}
         </main>

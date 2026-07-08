@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
-import { usePosts, useCurrentWorkspace, useWorkspaceMembers, useDeals, useProposals } from "@/lib/queries";
+import { usePosts, useCurrentWorkspace, useWorkspaceMembers, useDeals, useProposals, useIssues, useQuotations } from "@/lib/queries";
 import { useState, useMemo } from "react";
 import {
   UploadCloud, Link as LinkIcon, FileText, CheckCircle2,
   Clock, User, Filter, Calendar, X, KanbanSquare, Download,
+  Receipt, AlertOctagon,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,8 +49,10 @@ function ActivityLogsPage() {
   const { data: members = [], isLoading: membersLoading } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: deals = [], isLoading: dealsLoading } = useDeals(workspace?.workspaceId);
   const { data: proposals = [], isLoading: proposalsLoading } = useProposals(workspace?.workspaceId);
+  const { data: issues = [], isLoading: issuesLoading } = useIssues(workspace?.workspaceId);
+  const { data: quotations = [], isLoading: quotationsLoading } = useQuotations(workspace?.workspaceId);
 
-  const isLoading = postsLoading || membersLoading || dealsLoading || proposalsLoading;
+  const isLoading = postsLoading || membersLoading || dealsLoading || proposalsLoading || issuesLoading || quotationsLoading;
 
   const [range, setRange] = useState<RangeOption>("week");
   const [customFrom, setCustomFrom] = useState("");
@@ -77,18 +80,33 @@ function ActivityLogsPage() {
 
         const events: { ts: Date; who: string; action: string; subject: string; client: string; platform: string; icon: any; color: string; extra: string }[] = [];
 
-        // Main status event
+        // Creation event
         events.push({
-          ts: new Date(p.updated_at),
+          ts: new Date(p.created_at || p.updated_at),
           who,
-          action,
+          action: "created a task",
           subject,
           client,
           platform,
-          icon: getActionIcon(action),
-          color: getActionColor(action),
+          icon: FileText,
+          color: "bg-blue-100 text-blue-700",
           extra: "-",
         });
+
+        // Main status event
+        if (p.updated_at && p.updated_at !== p.created_at) {
+          events.push({
+            ts: new Date(p.updated_at),
+            who,
+            action,
+            subject,
+            client,
+            platform,
+            icon: getActionIcon(action),
+            color: getActionColor(action),
+            extra: "-",
+          });
+        }
 
         // Reference content uploads
         if (p.reference_content && Array.isArray(p.reference_content)) {
@@ -173,22 +191,103 @@ function ActivityLogsPage() {
       const authorMember = members.find((m) => m.user_id === p.created_by);
       const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "System";
       const action = p.status === "Draft" ? "drafted a proposal" : p.status === "Sent" ? "sent a proposal" : `marked proposal as ${p.status}`;
-      return {
-        ts: new Date(p.updated_at || p.created_at || new Date()),
+      const events = [];
+      events.push({
+        ts: new Date(p.created_at || new Date()),
         who,
-        action,
+        action: "created a proposal",
         subject: p.title || "Proposal",
         client: p.client_name || "-",
         platform: "Proposals",
         icon: FileText,
-        color: p.status === "Approved" ? "bg-[#10B981]/10 text-[#047857]" : "bg-[#F59E0B]/10 text-[#92400E]",
-        extra: `Amount: ₹${p.amount?.toLocaleString("en-IN") || 0} ${p.pdf_url ? "(PDF Attached)" : ""}`,
-      };
-    });
+        color: "bg-blue-100 text-blue-700",
+        extra: `Amount: ₹${p.amount?.toLocaleString("en-IN") || 0}`,
+      });
+      if (p.updated_at && p.updated_at !== p.created_at) {
+        events.push({
+          ts: new Date(p.updated_at),
+          who,
+          action,
+          subject: p.title || "Proposal",
+          client: p.client_name || "-",
+          platform: "Proposals",
+          icon: FileText,
+          color: p.status === "Approved" ? "bg-[#10B981]/10 text-[#047857]" : "bg-[#F59E0B]/10 text-[#92400E]",
+          extra: `Amount: ₹${p.amount?.toLocaleString("en-IN") || 0} ${p.pdf_url ? "(PDF Attached)" : ""}`,
+        });
+      }
+      return events;
+    }).flat();
 
-    return [...postEvents, ...dealEvents, ...proposalEvents]
+    // 4. Quotation Events
+    const filteredQuotations = isClient ? quotations.filter(q => q.client_name?.toLowerCase() === clientName.toLowerCase()) : quotations;
+    const quotationEvents = filteredQuotations.map((q) => {
+      const authorMember = members.find((m) => m.user_id === q.created_by);
+      const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "System";
+      const events = [];
+      events.push({
+        ts: new Date(q.created_at || new Date()),
+        who,
+        action: "created a quotation",
+        subject: `Quotation ${q.quotation_number}`,
+        client: q.client_name || "-",
+        platform: "Quotations",
+        icon: Receipt,
+        color: "bg-purple-100 text-purple-700",
+        extra: "-",
+      });
+      if (q.updated_at && q.updated_at !== q.created_at) {
+        events.push({
+          ts: new Date(q.updated_at),
+          who,
+          action: q.status === "Sent" ? "sent the quotation" : q.status === "Draft" ? "updated quotation" : `marked quotation as ${q.status}`,
+          subject: `Quotation ${q.quotation_number}`,
+          client: q.client_name || "-",
+          platform: "Quotations",
+          icon: Receipt,
+          color: q.status === "Approved" ? "bg-green-100 text-green-700" : "bg-purple-100 text-purple-700",
+          extra: "-",
+        });
+      }
+      return events;
+    }).flat();
+
+    // 5. Issue Events
+    const filteredIssues = isClient ? issues.filter(i => i.client_name?.toLowerCase() === clientName.toLowerCase()) : issues;
+    const issueEvents = filteredIssues.map((i) => {
+      const reporterMember = members.find((m) => m.user_id === i.reported_by);
+      const who = reporterMember?.users?.full_name || reporterMember?.users?.email?.split("@")[0] || "System";
+      const events = [];
+      events.push({
+        ts: new Date(i.created_at || new Date()),
+        who,
+        action: "reported an issue",
+        subject: i.title || "Issue",
+        client: i.client_name || "-",
+        platform: "Issues",
+        icon: AlertOctagon,
+        color: "bg-red-100 text-red-700",
+        extra: `Priority: ${i.priority}`,
+      });
+      if (i.updated_at && i.updated_at !== i.created_at) {
+        events.push({
+          ts: new Date(i.updated_at),
+          who,
+          action: i.status === "Resolved" ? "resolved the issue" : `updated issue to ${i.status}`,
+          subject: i.title || "Issue",
+          client: i.client_name || "-",
+          platform: "Issues",
+          icon: AlertOctagon,
+          color: i.status === "Resolved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700",
+          extra: `Priority: ${i.priority}`,
+        });
+      }
+      return events;
+    }).flat();
+
+    return [...postEvents, ...dealEvents, ...proposalEvents, ...quotationEvents, ...issueEvents]
       .sort((a, b) => b.ts.getTime() - a.ts.getTime());
-  }, [posts, deals, proposals, members, isClient, clientName]);
+  }, [posts, deals, proposals, issues, quotations, members, isClient, clientName]);
 
   const filteredActivities = useMemo(() => {
     const now = new Date();
