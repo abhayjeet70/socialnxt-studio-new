@@ -38,6 +38,7 @@ function DealsPage() {
   const [clientName, setClientName] = useState("");
   const [projectName, setProjectName] = useState("");
   const [amount, setAmount] = useState("");
+  const [advancePaid, setAdvancePaid] = useState("");
   const [days, setDays] = useState("");
 
   // Edit state
@@ -45,6 +46,7 @@ function DealsPage() {
   const [editClientName, setEditClientName] = useState("");
   const [editProjectName, setEditProjectName] = useState("");
   const [editAmount, setEditAmount] = useState("");
+  const [editAdvancePaid, setEditAdvancePaid] = useState("");
   const [editDays, setEditDays] = useState("");
   const [editStage, setEditStage] = useState("");
   const updateDeal = useUpdateDeal();
@@ -75,6 +77,7 @@ function DealsPage() {
         client_name: clientName,
         project_name: projectName,
         amount: Number(amount),
+        advance_paid: Number(advancePaid) || 0,
         days,
         stage: "New",
       });
@@ -88,6 +91,7 @@ function DealsPage() {
       setClientName("");
       setProjectName("");
       setAmount("");
+      setAdvancePaid("");
       setDays("");
     } catch (err: any) {
       toast.error("Failed to create deal: " + err.message);
@@ -99,6 +103,7 @@ function DealsPage() {
     setEditClientName(d.client_name);
     setEditProjectName(d.project_name);
     setEditAmount(d.amount.toString());
+    setEditAdvancePaid((d.advance_paid || 0).toString());
     setEditDays(d.days);
     setEditStage(d.stage);
   };
@@ -113,6 +118,7 @@ function DealsPage() {
           client_name: editClientName,
           project_name: editProjectName,
           amount: Number(editAmount),
+          advance_paid: Number(editAdvancePaid) || 0,
           days: editDays,
           stage: editStage,
         },
@@ -433,10 +439,14 @@ function DealsPage() {
               <Label>Project Name</Label>
               <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Amount (₹)</Label>
                 <Input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 50000" />
+              </div>
+              <div className="space-y-2">
+                <Label>Advance (₹)</Label>
+                <Input type="number" min="0" value={advancePaid} onChange={(e) => setAdvancePaid(e.target.value)} placeholder="0" />
               </div>
               <div className="space-y-2">
                 <Label>Days / Duration</Label>
@@ -476,10 +486,14 @@ function DealsPage() {
               <Label>Project Name</Label>
               <Input value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Amount (₹)</Label>
                 <Input type="number" min="0" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} required placeholder="e.g. 50000" />
+              </div>
+              <div className="space-y-2">
+                <Label>Advance (₹)</Label>
+                <Input type="number" min="0" value={editAdvancePaid} onChange={(e) => setEditAdvancePaid(e.target.value)} placeholder="0" />
               </div>
               <div className="space-y-2">
                 <Label>Days / Duration</Label>

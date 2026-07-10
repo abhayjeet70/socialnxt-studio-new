@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Loader2, X, ExternalLink, Calendar } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, X, ExternalLink, Calendar, Instagram, Facebook, Linkedin, Youtube } from "lucide-react";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import { useCurrentWorkspace, usePosts, useUpdatePostStatus, Post, useClients, useWorkspaceMembers } from "@/lib/queries";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,10 +16,28 @@ export const Route = createFileRoute("/calendar")({
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
+/** Get a post's platforms, preferring the new platforms[] array over the legacy single field. */
+function getPostPlatforms(post: Post): string[] {
+  if (post.platforms && post.platforms.length) return post.platforms;
+  if (post.platform) return [post.platform];
+  const m = post.content?.match(/^\[(.*?)\]/);
+  return m ? [m[1]] : [];
+}
+
+function getPlatformIcon(platform: string, className = "w-3.5 h-3.5") {
+  switch (platform) {
+    case "Instagram": return <Instagram className={className} />;
+    case "Facebook": return <Facebook className={className} />;
+    case "LinkedIn": return <Linkedin className={className} />;
+    case "YouTube": return <Youtube className={className} />;
+    case "TikTok": return <svg className={`fill-current ${className}`} viewBox="0 0 448 512"><path d="M448,209.91a210.06,210.06,0,0,1-122.77-39.25V349.38A162.55,162.55,0,1,1,185,188.31V278.2a74.62,74.62,0,1,0,52.23,71.18V0l88,0a121.18,121.18,0,0,0,1.86,22.17h0A122.18,122.18,0,0,0,381,102.39a121.43,121.43,0,0,0,67,20.14Z"/></svg>;
+    default: return platform ? <span className="text-[10px] font-bold">{platform[0]}</span> : null;
+  }
+}
+
 function getPlatformColor(post: Post): string {
-  const platformMatch = post.content?.match(/^\[(.*?)\]/);
-  const platformName = post.platform || (platformMatch ? platformMatch[1] : "");
-  return platformName ? (PLATFORM_COLOR[platformName as keyof typeof PLATFORM_COLOR] || "#6366f1") : "#6366f1";
+  const first = getPostPlatforms(post)[0];
+  return first ? (PLATFORM_COLOR[first as keyof typeof PLATFORM_COLOR] || "#6366f1") : "#6366f1";
 }
 
 function getPostText(post: Post): string {
@@ -105,7 +123,7 @@ function CalendarPage() {
 
   // Apply platform filter on top
   const posts = selectedPlatformFilter !== "All Platforms"
-    ? clientFiltered.filter((p) => p.platform === selectedPlatformFilter)
+    ? clientFiltered.filter((p) => getPostPlatforms(p).includes(selectedPlatformFilter))
     : clientFiltered;
 
   const handlePrevMonth = () => {
@@ -216,9 +234,11 @@ function CalendarPage() {
                           <SelectItem key={p} value={p}>
                             <div className="flex items-center gap-2">
                               <span
-                                className="h-2 w-2 rounded-full shrink-0"
+                                className="h-4 w-4 rounded-full shrink-0 grid place-items-center text-white"
                                 style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] }}
-                              />
+                              >
+                                {getPlatformIcon(p, "w-2.5 h-2.5")}
+                              </span>
                               {p}
                             </div>
                           </SelectItem>
@@ -273,9 +293,11 @@ function CalendarPage() {
               {PLATFORMS.map((p) => (
                 <span key={p} className="text-[11px] px-2 py-0.5 rounded-full bg-muted flex items-center gap-1.5">
                   <span
-                    className="h-2 w-2 rounded-full shrink-0"
+                    className="h-4 w-4 rounded-full shrink-0 grid place-items-center text-white"
                     style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] }}
-                  />
+                  >
+                    {getPlatformIcon(p, "w-2.5 h-2.5")}
+                  </span>
                   {p}
                 </span>
               ))}
@@ -335,20 +357,24 @@ function CalendarPage() {
                                 {dayPosts.slice(0, 3).map((post) => {
                                   const color = getPlatformColor(post);
                                   const text = getPostText(post);
+                                  const pls = getPostPlatforms(post);
                                   return (
                                     <div
                                       key={post.id}
                                       className="flex items-center gap-1 text-[10px] rounded px-1 py-0.5 text-foreground/80 hover:opacity-80 transition-opacity truncate"
                                       style={{ background: `${color}18`, borderLeft: `2.5px solid ${color}` }}
-                                      title={text}
+                                      title={`${text}${pls.length ? " — " + pls.join(", ") : ""}`}
                                     >
-                                      <span
-                                        className="shrink-0 text-[10px]"
-                                        style={{ color }}
-                                      >
-                                        {post.platform
-                                          ? (post.platform.length > 2 ? post.platform.slice(0, 2) : post.platform)
-                                          : "•"}
+                                      <span className="shrink-0 flex items-center gap-0.5">
+                                        {(pls.length ? pls : [""]).slice(0, 3).map((p, i) => (
+                                          <span
+                                            key={i}
+                                            className="h-3.5 w-3.5 rounded-full inline-flex items-center justify-center text-white"
+                                            style={{ background: p ? (PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#6366f1") : "#6366f1" }}
+                                          >
+                                            {p ? getPlatformIcon(p, "w-2 h-2") : null}
+                                          </span>
+                                        ))}
                                       </span>
                                       <span className="truncate font-medium leading-tight">{text}</span>
                                     </div>
@@ -393,15 +419,7 @@ function CalendarPage() {
                   <div className="text-xl font-bold text-foreground">
                     {selectedDay} {MONTH_NAMES[currentDate.getMonth()]}
                   </div>
-                  {/* Platform legend dots */}
-                  <div className="flex items-center gap-2 mt-1">
-                    {PLATFORMS.slice(0, 3).map((p) => (
-                      <div key={p} className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] }} />
-                        <span className="text-[10px] text-muted-foreground">{p}</span>
-                      </div>
-                    ))}
-                  </div>
+
                 </div>
                 <button
                   onClick={() => { setSelectedDay(null); setSelectedPost(null); }}
@@ -445,9 +463,11 @@ function CalendarPage() {
                           <div className="flex items-start justify-between gap-2 mb-1.5">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span
-                                className="h-2 w-2 rounded-full shrink-0 mt-0.5"
+                                className="h-4 w-4 rounded-full shrink-0 mt-0.5 grid place-items-center text-white"
                                 style={{ background: color }}
-                              />
+                              >
+                                {getPlatformIcon(getPostPlatforms(post)[0] || "", "w-2.5 h-2.5")}
+                              </span>
                               <span className="text-xs font-semibold text-foreground truncate">{text}</span>
                             </div>
                             <StatusBadge status={post.status} />
@@ -455,9 +475,12 @@ function CalendarPage() {
 
                           {/* Platform + client row */}
                           <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground mb-1">
-                            {post.platform && (
-                              <span className="bg-muted px-1.5 py-0.5 rounded-full">{post.platform}</span>
-                            )}
+                            {getPostPlatforms(post).map((p) => (
+                              <span key={p} className="pl-1 pr-1.5 py-0.5 rounded-full text-white font-medium flex items-center gap-1" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#6366f1" }}>
+                                {getPlatformIcon(p, "w-2.5 h-2.5")}
+                                {p}
+                              </span>
+                            ))}
                             {post.client_name && !isClient && (
                               <span className="bg-muted px-1.5 py-0.5 rounded-full truncate max-w-[120px]">
                                 Client: {post.client_name}
@@ -503,7 +526,11 @@ function CalendarPage() {
                                   .filter(Boolean);
                                 if (assignedMembers.length === 0) return null;
                                 const names = assignedMembers.map(
-                                  (m: any) => m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown"
+                                  (m: any) => {
+                                    const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                                    const role = m.role === "admin" ? "Admin" : (m.agency_role || "Social Media Manager");
+                                    return `${n} (${role})`;
+                                  }
                                 );
                                 const isCollab = assignedMembers.length > 1;
                                 return (
@@ -642,15 +669,20 @@ function CalendarPage() {
                       <div className="p-3">
                         <div className="flex items-start justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="h-2 w-2 rounded-full shrink-0 mt-0.5" style={{ background: color }} />
+                            <span className="h-4 w-4 rounded-full shrink-0 mt-0.5 grid place-items-center text-white" style={{ background: color }}>
+                               {getPlatformIcon(getPostPlatforms(post)[0] || "", "w-2.5 h-2.5")}
+                            </span>
                             <span className="text-xs font-semibold text-foreground truncate">{text}</span>
                           </div>
                           <StatusBadge status={post.status} />
                         </div>
                         <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground mb-1">
-                          {post.platform && (
-                            <span className="bg-muted px-1.5 py-0.5 rounded-full">{post.platform}</span>
-                          )}
+                          {getPostPlatforms(post).map((p) => (
+                            <span key={p} className="pl-1 pr-1.5 py-0.5 rounded-full text-white font-medium flex items-center gap-1" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#6366f1" }}>
+                              {getPlatformIcon(p, "w-2.5 h-2.5")}
+                              {p}
+                            </span>
+                          ))}
                           {post.client_name && !isClient && (
                             <span className="bg-muted px-1.5 py-0.5 rounded-full truncate max-w-[160px]">
                               Client: {post.client_name}

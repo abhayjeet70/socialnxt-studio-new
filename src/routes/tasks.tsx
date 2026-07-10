@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { AppShell } from "@/components/app-shell";
-import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers } from "@/lib/queries";
-import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download, Undo, X } from "lucide-react";
+import { AdminTasksView } from "@/components/admin-tasks-view";
+import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers, useBulkCreatePosts } from "@/lib/queries";
+import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download, Undo, X, Upload, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -143,7 +144,9 @@ function TasksPage() {
   const { data: clients = [], isLoading: isLoadingClients } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
   const createPost = useCreatePost();
-  
+  const bulkCreatePosts = useBulkCreatePosts();
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   const queryClient = useQueryClient();
   const [newlyAddedPostId, setNewlyAddedPostId] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
@@ -212,12 +215,20 @@ function TasksPage() {
   };
 
   const isClient = workspace?.role === "client";
+  const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
+  const isDesignerOrEditor = workspace?.role === "employee" && (workspace?.agencyRole === "Designer" || workspace?.agencyRole === "Video Editor");
+
   const clientNameForFilter = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
 
   const closedClientNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
   const closedClientEmails = new Set(clients.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
 
-  const clientNamesSet = new Set(clients.filter(c => c.status !== "Closed").map(c => c.name));
+  const clientNamesSet = new Set(
+    clients
+      .filter(c => c.status !== "Closed")
+      .filter(c => !isSMM || c.team_assignments?.["Account/Social Media Manager"] === workspace?.userId)
+      .map(c => c.name)
+  );
   members.filter(m => m.role === 'client').forEach(m => {
     const name = m.users?.full_name || m.users?.email?.split('@')[0];
     const email = m.users?.email?.toLowerCase();
@@ -232,22 +243,48 @@ function TasksPage() {
 
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>("All Clients");
   const [selectedPlatformFilter, setSelectedPlatformFilter] = useState<string>("All Platforms");
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("All Status");
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>("All Dates");
+
+  const [adminViewMode, setAdminViewMode] = useState<"dashboard" | "details">("dashboard");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const clientParam = params.get("client");
+    if (clientParam) {
+      setSelectedClientFilter(clientParam);
+      setAdminViewMode("details");
+    }
+  }, []);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
   const [customDateFrom, setCustomDateFrom] = useState<string>("");
   const [customDateTo, setCustomDateTo] = useState<string>("");
 
   const sortedPosts = [...posts]
     .filter((p) => {
+      if (isDesignerOrEditor) {
+        if (!p.assigned_to?.includes(workspace?.userId || "")) return false;
+      }
+
       // Client filter
       if (isClient) {
         if (p.client_name?.toLowerCase() !== clientNameForFilter.toLowerCase()) return false;
+      } else if (isSMM && selectedClientFilter === "All Clients") {
+        if (!clientNamesSet.has(p.client_name || "")) return false;
       } else if (selectedClientFilter !== "All Clients") {
         if (p.client_name !== selectedClientFilter) return false;
       }
 
-      // Platform filter
+      // Platform filter (checks both legacy single + new array)
       if (selectedPlatformFilter !== "All Platforms") {
-        if (p.platform !== selectedPlatformFilter) return false;
+        const pls = p.platforms && p.platforms.length ? p.platforms : (p.platform ? [p.platform] : []);
+        if (!pls.includes(selectedPlatformFilter)) return false;
+      }
+
+      // Status filter
+      if (selectedStatusFilter !== "All Status") {
+        if (p.status !== selectedStatusFilter) return false;
       }
 
       // Date filter
@@ -286,6 +323,64 @@ function TasksPage() {
       return dateA - dateB;
     });
 
+  // Pagination — keeps the sheet fast even with thousands of rows
+  const totalPages = Math.max(1, Math.ceil(sortedPosts.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  useEffect(() => { if (page > totalPages - 1) setPage(0); }, [totalPages, page]);
+  const pagedPosts = sortedPosts.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  // Parse a single CSV line respecting double-quoted fields
+  const parseCSVLine = (line: string): string[] => {
+    const out: string[] = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === "," && !inQuotes) {
+        out.push(cur); cur = "";
+      } else cur += ch;
+    }
+    out.push(cur);
+    return out.map(s => s.trim());
+  };
+
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !workspace) return;
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+      if (lines.length < 2) { toast.error("CSV has no data rows"); return; }
+      // Header: Client,Platform,Content Type,Topic,Assigned To,Status,Schedule (Assigned To ignored on import)
+      const rows: Partial<Post>[] = lines.slice(1).map(line => {
+        const c = parseCSVLine(line);
+        const platforms = (c[1] || "").split(/[;|]/).map(s => s.trim()).filter(Boolean);
+        const scheduleRaw = c[6] || "";
+        const parsed = scheduleRaw ? new Date(scheduleRaw) : null;
+        const scheduled = parsed && !isNaN(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString();
+        return {
+          workspace_id: workspace.workspaceId,
+          author_id: workspace.userId,
+          client_name: c[0] || null,
+          platforms: platforms.length ? platforms : [],
+          content_type: c[2] || "",
+          topic: c[3] || "",
+          status: "draft" as const,
+          scheduled_for: scheduled,
+        };
+      });
+      await bulkCreatePosts.mutateAsync({ rows, workspace_id: workspace.workspaceId });
+      toast.success(`Imported ${rows.length} row${rows.length === 1 ? "" : "s"}!`);
+    } catch (err: any) {
+      toast.error("Import failed: " + (err.message || "bad CSV"));
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
   const handleExportCSV = () => {
     if (sortedPosts.length === 0) return toast.info("No data to export");
     const headers = "Client,Platform,Content Type,Topic,Assigned To,Status,Schedule\n";
@@ -306,14 +401,39 @@ function TasksPage() {
     toast.success("Content Sheet exported as CSV");
   };
 
+  const showAdminDashboard = (workspace?.role === "admin" || isSMM) && adminViewMode === "dashboard";
+  const showAdminDetails = (workspace?.role === "admin" || isSMM) && adminViewMode === "details";
+
+  if (showAdminDashboard) {
+    return (
+      <AppShell title={isSMM ? "My Clients" : "Content Sheet (Admin)"} subtitle={isSMM ? "Your assigned clients and tasks" : "High-level dashboard of all client tasks"}>
+        <AdminTasksView 
+          workspaceId={workspace.workspaceId} 
+          userId={workspace.userId}
+          isSMM={isSMM}
+          onClientClick={(clientName) => {
+            setSelectedClientFilter(clientName);
+            setAdminViewMode("details");
+          }} 
+        />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
-      title="Content Sheet"
+      title={showAdminDetails ? `Content Sheet - ${selectedClientFilter}` : "Content Sheet"}
       subtitle="Spreadsheet view for managing content topics, references, and final deliverables."
       actions={
         <div className="flex flex-wrap items-center gap-2">
+          {showAdminDetails && (
+            <Button variant="outline" onClick={() => { setAdminViewMode("dashboard"); setSelectedClientFilter("All Clients"); }} className="rounded-xl h-10 border-input mr-2">
+              <Undo className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Back to Dashboard</span>
+            </Button>
+          )}
           <div className="w-32 sm:w-40">
-            <Select value={selectedDateFilter} onValueChange={setSelectedDateFilter}>
+            <Select value={selectedDateFilter} onValueChange={(v) => { setSelectedDateFilter(v); setPage(0); }}>
               <SelectTrigger className="h-10 rounded-xl bg-white border-input text-xs sm:text-sm">
                 <SelectValue placeholder="All Dates" />
               </SelectTrigger>
@@ -335,7 +455,7 @@ function TasksPage() {
             </div>
           )}
           <div className="w-36 sm:w-44">
-            <Select value={selectedPlatformFilter} onValueChange={setSelectedPlatformFilter}>
+            <Select value={selectedPlatformFilter} onValueChange={(v) => { setSelectedPlatformFilter(v); setPage(0); }}>
               <SelectTrigger className="h-10 rounded-xl bg-white border-input text-xs sm:text-sm">
                 <SelectValue placeholder="All Platforms" />
               </SelectTrigger>
@@ -347,9 +467,22 @@ function TasksPage() {
               </SelectContent>
             </Select>
           </div>
+          <div className="w-32 sm:w-40">
+            <Select value={selectedStatusFilter} onValueChange={(v) => { setSelectedStatusFilter(v); setPage(0); }}>
+              <SelectTrigger className="h-10 rounded-xl bg-white border-input text-xs sm:text-sm">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All Status">All Status</SelectItem>
+                {["draft","pending_approval","changes_requested","approved","scheduled","published"].map(s => (
+                  <SelectItem key={s} value={s} className="capitalize">{s.replace(/_/g, " ")}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {!isClient && (
             <div className="w-36 sm:w-48">
-              <Select value={selectedClientFilter} onValueChange={setSelectedClientFilter}>
+              <Select value={selectedClientFilter} onValueChange={(v) => { setSelectedClientFilter(v); setPage(0); }}>
                 <SelectTrigger className="h-10 rounded-xl bg-white border-input text-xs sm:text-sm">
                   <SelectValue placeholder="All Clients" />
                 </SelectTrigger>
@@ -366,6 +499,21 @@ function TasksPage() {
             <Download className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Export</span>
           </Button>
+          {!isClient && (
+            <>
+              <input ref={importInputRef} type="file" accept=".csv,text/csv" onChange={handleImportCSV} className="hidden" />
+              <Button
+                variant="outline"
+                onClick={() => importInputRef.current?.click()}
+                disabled={bulkCreatePosts.isPending}
+                className="rounded-xl h-10 border-input"
+                title="Bulk import posts from a CSV (Client, Platform, Content Type, Topic, Assigned To, Status, Schedule)"
+              >
+                {bulkCreatePosts.isPending ? <Loader2 className="h-4 w-4 animate-spin sm:mr-2" /> : <Upload className="h-4 w-4 sm:mr-2" />}
+                <span className="hidden sm:inline">Import</span>
+              </Button>
+            </>
+          )}
           {!isClient && (
             <div className="flex items-center gap-2">
               <Button 
@@ -409,18 +557,31 @@ function TasksPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedPosts.map((post, idx) => (
-                  <TaskRow key={post.id} post={post} index={idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} />
+                {pagedPosts.map((post, idx) => (
+                  <TaskRow key={post.id} post={post} index={safePage * PAGE_SIZE + idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} />
                 ))}
                 {sortedPosts.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={11} className="text-center py-10 text-muted-foreground">
                       No posts found. Click 'Add Row' to draft new content!
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+        {/* Pagination footer */}
+        {sortedPosts.length > 0 && (
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border bg-white">
+            <div className="text-xs text-muted-foreground">
+              Showing <span className="font-semibold text-foreground">{safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, sortedPosts.length)}</span> of {sortedPosts.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-8 rounded-lg" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>Prev</Button>
+              <span className="text-xs text-muted-foreground">Page {safePage + 1} / {totalPages}</span>
+              <Button variant="outline" size="sm" className="h-8 rounded-lg" disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>Next</Button>
+            </div>
           </div>
         )}
       </div>
@@ -432,6 +593,7 @@ function TasksPage() {
 function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction }: { post: Post; index: number; isClient?: boolean; allClientNames: string[]; members: any[]; setUndoAction: (action: UndoAction) => void }) {
   const queryClient = useQueryClient();
   const { data: workspace } = useCurrentWorkspace();
+  const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
   const updatePost = useUpdatePostDetails();
   const updateStatus = useUpdatePostStatus();
   const deletePost = useDeletePost();
@@ -657,6 +819,8 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
           post={post}
           members={members}
           isClient={isClient}
+          isSMM={isSMM}
+          currentUserId={workspace?.userId}
           onUpdate={(ids) => updatePost.mutate({ id: post.id, updates: { assigned_to: ids } })}
         />
       </td>
@@ -697,15 +861,24 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
             className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${post.approved_by ? 'cursor-help' : ''}`}
             title={post.approved_by ? `Approved By: ${post.approved_by}\nDate: ${post.approved_at ? new Date(post.approved_at).toLocaleString() : ''}` : undefined}
             style={{
-            backgroundColor: post.status === 'draft' ? '#f3f4f6' : 
+            backgroundColor: post.status === 'draft' ? '#f3f4f6' :
                             post.status === 'pending_approval' ? '#fef3c7' :
+                            post.status === 'changes_requested' ? '#fee2e2' :
                             post.status === 'approved' ? '#d1fae5' : '#dbeafe',
             color: post.status === 'draft' ? '#4b5563' :
                    post.status === 'pending_approval' ? '#d97706' :
+                   post.status === 'changes_requested' ? '#dc2626' :
                    post.status === 'approved' ? '#059669' : '#2563eb'
           }}>
-            {post.status.replace("_", " ")}
+            {post.status.replace(/_/g, " ")}
           </span>
+
+          {/* Revision note from the last rejection */}
+          {post.status === 'changes_requested' && post.revision_note && (
+            <div className="text-[9px] text-red-600 bg-red-50 border border-red-100 rounded px-1.5 py-1 mt-1 text-left leading-tight max-w-[120px]">
+              <span className="font-semibold">Changes: </span>{post.revision_note}
+            </div>
+          )}
           {post.approved_by && (
             <div className="text-[9px] text-muted-foreground mt-1 text-center leading-tight">
               Approved by<br/>
@@ -720,72 +893,91 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
                 size="sm" 
                 variant="outline" 
                 className="h-7 text-[10px] w-full"
-                onClick={() => updateStatus.mutate({ id: post.id, status: "pending_approval", workspace_id: workspace.workspaceId })}
+                onClick={() => { if (!workspace) return; updateStatus.mutate({ id: post.id, status: "pending_approval", workspace_id: workspace.workspaceId }) }}
                 disabled={updateStatus.isPending}
               >
                 Submit
               </Button>
             )}
             
-            {/* Clients OR Admins can approve/reject pending posts */}
-            {(workspace?.role === "client" || workspace?.role === "admin") && post.status === "pending_approval" && (
+            {/* Clients, Admins, or SMMs can approve/reject pending posts */}
+            {(workspace?.role === "client" || workspace?.role === "admin" || isSMM) && post.status === "pending_approval" && (
               <>
                 <Button 
                   size="sm" 
                   className="h-7 text-[10px] w-full bg-green-600 hover:bg-green-700 text-white"
-                  onClick={() => updateStatus.mutate({ 
+                  onClick={() => {
+                    if (!workspace) return;
+                    updateStatus.mutate({ 
                     id: post.id, 
                     status: "approved", 
                     workspace_id: workspace.workspaceId,
                     approved_by: workspace.userFullName || workspace.userEmail?.split("@")[0] || "Unknown",
                     approved_at: new Date().toISOString()
-                  })}
+                  })}}
                   disabled={updateStatus.isPending}
                 >
                   Approve
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="destructive" 
+                <Button
+                  size="sm"
+                  variant="destructive"
                   className="h-7 text-[10px] w-full"
-                  onClick={() => updateStatus.mutate({ id: post.id, status: "draft", workspace_id: workspace.workspaceId })}
-                  disabled={updateStatus.isPending}
+                  onClick={() => {
+                    const note = window.prompt("What needs to change? (this note is shown to the team)");
+                    if (note === null) return;
+                    updatePost.mutate({ id: post.id, updates: { status: "changes_requested", revision_note: note } });
+                  }}
+                  disabled={updatePost.isPending}
                 >
-                  Reject
+                  Request Changes
                 </Button>
               </>
             )}
 
-            {/* Only Admins can final-schedule approved posts */}
-            {workspace?.role === "admin" && post.status === "approved" && (
+            {/* Employees/Admins resubmit after changes requested */}
+            {(workspace?.role === "employee" || workspace?.role === "admin") && post.status === "changes_requested" && (
+              <Button
+                size="sm"
+                className="h-7 text-[10px] w-full"
+                onClick={() => updatePost.mutate({ id: post.id, updates: { status: "pending_approval", revision_note: null } })}
+                disabled={updatePost.isPending}
+              >
+                Resubmit
+              </Button>
+            )}
+
+            {/* Admins and SMMs can final-schedule approved posts */}
+            {(workspace?.role === "admin" || isSMM) && post.status === "approved" && (
               <Button 
                 size="sm" 
                 className="h-7 text-[10px] w-full"
-                onClick={() => updateStatus.mutate({ id: post.id, status: "scheduled", workspace_id: workspace.workspaceId })}
+                onClick={() => { if (!workspace) return; updateStatus.mutate({ id: post.id, status: "scheduled", workspace_id: workspace.workspaceId }) }}
                 disabled={updateStatus.isPending}
               >
                 Schedule
               </Button>
             )}
             
-            {/* Employees or Admins can mark scheduled posts as published (posted) — only on the scheduled date */}
-            {(workspace?.role === "employee" || workspace?.role === "admin") && post.status === "scheduled" && (() => {
-              const today = new Date().toISOString().slice(0, 10);
-              const scheduledDay = post.scheduled_for?.slice(0, 10);
-              return scheduledDay === today;
-            })() && (
-              <Button 
-                size="sm" 
+            {/* Admins or SMMs can complete an approved/scheduled task at any time */}
+            {(workspace?.role === "admin" || isSMM) &&
+              (post.status === "scheduled" || post.status === "approved") && (
+              <Button
+                size="sm"
                 className="h-7 text-[10px] w-full bg-green-500 hover:bg-green-600 text-white"
-                onClick={() => updateStatus.mutate({ id: post.id, status: "published", workspace_id: workspace.workspaceId })}
+                onClick={() => {
+                  if (!workspace) return;
+                  updateStatus.mutate({ id: post.id, status: "published", workspace_id: workspace.workspaceId }, {
+                  onSuccess: () => toast.success("Task completed ✓"),
+                })}}
                 disabled={updateStatus.isPending}
               >
-                Mark Posted
+                <Check className="w-3 h-3 mr-1" /> Complete
               </Button>
             )}
             
-            {/* Admin or Employee can delete the row */}
-            {(workspace?.role === "admin" || workspace?.role === "employee") && (
+            {/* Admin or SMM can delete the row */}
+            {(workspace?.role === "admin" || isSMM) && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -832,11 +1024,15 @@ function AssignedToCell({
   post,
   members,
   isClient,
+  isSMM,
+  currentUserId,
   onUpdate,
 }: {
   post: Post;
   members: any[];
   isClient?: boolean;
+  isSMM?: boolean;
+  currentUserId?: string;
   onUpdate: (ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -851,11 +1047,22 @@ function AssignedToCell({
     setSelectedIds(post.assigned_to ?? []);
   }, [post.assigned_to]);
 
-  const eligibleMembers = members.filter((m) => m.role === "employee" || m.role === "admin");
+  let eligibleMembers = members.filter((m) => m.role === "employee");
+  
+  if (isSMM) {
+    eligibleMembers = eligibleMembers.filter(m => 
+      m.agency_role === "Designer" || 
+      m.agency_role === "Video Editor" || 
+      m.user_id === currentUserId
+    );
+  }
 
   const getMemberName = (userId: string) => {
     const m = eligibleMembers.find((m) => m.user_id === userId);
-    return m ? (m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown") : "Unknown";
+    if (!m) return "Unknown";
+    const name = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+    const roleName = m.role === "admin" ? "Admin" : (m.agency_role || "Social Media Manager");
+    return `${name} (${roleName})`;
   };
 
   const getInitials = (name: string) =>

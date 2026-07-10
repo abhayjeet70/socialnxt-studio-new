@@ -146,9 +146,9 @@ function SettingsPage() {
     <AppShell title="Settings" subtitle="Manage members, roles, departments and workspace preferences.">
       <Tabs defaultValue="members" className="w-full">
         <TabsList className="bg-muted/60 p-1 rounded-xl flex flex-wrap h-auto">
-          {["members", "roles", "permissions", "company"].map((v) => (
+          {["members", "roles", "permissions", "social", "company"].map((v) => (
             <TabsTrigger key={v} value={v} className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm capitalize">
-              {v === "company" ? "Company Settings" : v}
+              {v === "company" ? "Company Settings" : v === "social" ? "Social Accounts" : v}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -376,6 +376,73 @@ function SettingsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </TabsContent>
+
+        {/* ─── Social Accounts Tab ──────────────────────────────────────────────── */}
+        <TabsContent value="social" className="mt-5">
+          <div className="card-soft p-5 space-y-4 max-w-2xl">
+            <div>
+              <div className="font-semibold text-lg">Connected Social Accounts</div>
+              <div className="text-sm text-muted-foreground mt-1 mb-4">
+                Connect your client's social media profiles to enable direct publishing and analytics.
+              </div>
+            </div>
+
+            <div className="space-y-4 mt-4">
+              {/* Meta / Instagram */}
+              <div className="flex items-center justify-between p-4 border rounded-xl bg-background">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
+                    Ig
+                  </div>
+                  <div>
+                    <div className="font-semibold">Instagram / Facebook</div>
+                    <div className="text-xs text-muted-foreground">Not connected</div>
+                  </div>
+                </div>
+                <Button variant="outline" className="rounded-xl h-9 text-xs" onClick={() => toast("OAuth flow for Meta would start here.")}>
+                  Connect
+                </Button>
+              </div>
+
+              {/* LinkedIn */}
+              <div className="flex items-center justify-between p-4 border rounded-xl bg-background">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 bg-[#0A66C2] rounded-lg flex items-center justify-center text-white font-bold">
+                    in
+                  </div>
+                  <div>
+                    <div className="font-semibold">LinkedIn Pages</div>
+                    <div className="text-xs text-muted-foreground">Not connected</div>
+                  </div>
+                </div>
+                <Button variant="outline" className="rounded-xl h-9 text-xs" onClick={() => toast("OAuth flow for LinkedIn would start here.")}>
+                  Connect
+                </Button>
+              </div>
+
+              {/* X / Twitter */}
+              <div className="flex items-center justify-between p-4 border rounded-xl bg-background">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 bg-black rounded-lg flex items-center justify-center text-white font-bold">
+                    𝕏
+                  </div>
+                  <div>
+                    <div className="font-semibold">X (Twitter)</div>
+                    <div className="text-xs text-muted-foreground">Not connected</div>
+                  </div>
+                </div>
+                <Button variant="outline" className="rounded-xl h-9 text-xs" onClick={() => toast("OAuth flow for X would start here.")}>
+                  Connect
+                </Button>
+              </div>
+            </div>
+            
+            <div className="text-xs text-muted-foreground bg-muted p-3 rounded-lg flex items-start gap-2 mt-4">
+              <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>We use secure OAuth 2.0 to connect to social platforms. SocialNxt does not store your passwords.</span>
+            </div>
           </div>
         </TabsContent>
 

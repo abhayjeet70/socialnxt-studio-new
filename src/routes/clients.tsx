@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link as RouterLink, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
-import { Plus, Search, Filter, MoreHorizontal, Loader2, Check, Users, Pencil, Trash2, Archive, Link } from "lucide-react";
+import { Plus, Search, Filter, MoreHorizontal, Loader2, Check, Users, Pencil, Trash2, Archive, Link, Instagram, Facebook, Linkedin, Youtube, Music, ChevronsUpDown, IndianRupee, FileText, CheckCircle2, AlertOctagon, Calendar } from "lucide-react";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
-import { useCurrentWorkspace, useClients, useCreateClient, useUpdateClient, useDeleteClient, useWorkspaceMembers, type Client } from "@/lib/queries";
+import { useCurrentWorkspace, useClients, useCreateClient, useUpdateClient, useDeleteClient, useWorkspaceMembers, useDeals, type Client } from "@/lib/queries";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/clients")({
@@ -19,12 +21,8 @@ export const Route = createFileRoute("/clients")({
 });
 
 const STATUS_TONE: Record<string, string> = {
-  Planning: "bg-[#F59E0B]/10 text-[#B45309]",
-  Designing: "bg-[#8B5CF6]/10 text-[#6D28D9]",
-  Editing: "bg-[#06B6D4]/10 text-[#0E7490]",
-  Review: "bg-[#F59E0B]/10 text-[#B45309]",
-  Published: "bg-[#10B981]/10 text-[#047857]",
-  Completed: "bg-[#10B981]/10 text-[#047857]",
+  Active: "bg-emerald-50 text-emerald-600",
+  Inactive: "bg-muted text-muted-foreground",
 };
 
 const CLIENT_AVATAR_COLORS = [
@@ -41,10 +39,25 @@ function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
+function getPlatformIcon(platform: string) {
+  switch (platform) {
+    case "Instagram": return <Instagram className="w-3.5 h-3.5" />;
+    case "Facebook": return <Facebook className="w-3.5 h-3.5" />;
+    case "LinkedIn": return <Linkedin className="w-3.5 h-3.5" />;
+    case "YouTube": return <Youtube className="w-3.5 h-3.5" />;
+    case "TikTok": return <svg className="w-3 h-3 fill-current" viewBox="0 0 448 512"><path d="M448,209.91a210.06,210.06,0,0,1-122.77-39.25V349.38A162.55,162.55,0,1,1,185,188.31V278.2a74.62,74.62,0,1,0,52.23,71.18V0l88,0a121.18,121.18,0,0,0,1.86,22.17h0A122.18,122.18,0,0,0,381,102.39a121.43,121.43,0,0,0,67,20.14Z"/></svg>;
+    default: return platform[0];
+  }
+}
+
+const ASSIGNABLE_ROLES = ["Account/Social Media Manager", "Designer", "Video Editor"];
+
 function ClientsPage() {
+  const navigate = useNavigate();
   const { data: workspace } = useCurrentWorkspace();
   const { data: clients = [], isLoading: isLoadingClients } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
+  const { data: deals = [] } = useDeals(workspace?.workspaceId);
   const createClient = useCreateClient();
   const updateClient = useUpdateClient();
   const deleteClient = useDeleteClient();
@@ -59,6 +72,8 @@ function ClientsPage() {
   const [industry, setIndustry] = useState("");
   const [status, setStatus] = useState("Planning");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [teamAssignments, setTeamAssignments] = useState<Record<string, string>>({});
+  const [addManagerOpen, setAddManagerOpen] = useState<string | null>(null);
 
   // ── Edit state ──
   const [editClient, setEditClient] = useState<Client | null>(null);
@@ -67,6 +82,8 @@ function ClientsPage() {
   const [editIndustry, setEditIndustry] = useState("");
   const [editStatus, setEditStatus] = useState("Planning");
   const [editPlatforms, setEditPlatforms] = useState<string[]>([]);
+  const [editTeamAssignments, setEditTeamAssignments] = useState<Record<string, string>>({});
+  const [editManagerOpen, setEditManagerOpen] = useState<string | null>(null);
 
   // ── Delete state ──
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
@@ -79,9 +96,18 @@ function ClientsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [platformFilter, setPlatformFilter] = useState("All Platforms");
+  const [sortBy, setSortBy] = useState("newest");
+  const [isInitializing, setIsInitializing] = useState<string | null>(null);
 
-  // Workspace members with role 'client'
-  const clientMembers = members.filter((m) => m.role === "client");
+  // Workspace members with role 'client' who DO NOT have a CRM profile yet
+  const clientMembers = members.filter((m) => {
+    if (m.role !== "client") return false;
+    const memberEmail = m.users?.email?.toLowerCase();
+    if (!memberEmail) return true;
+    return !clients.some((c) => c.email?.toLowerCase() === memberEmail);
+  });
+  
+  const staffMembers = members.filter((m) => m.role === "employee");
 
   const togglePlatform = (p: string, arr: string[], setArr: (v: string[]) => void) => {
     setArr(arr.includes(p) ? arr.filter(x => x !== p) : [...arr, p]);
@@ -90,6 +116,10 @@ function ClientsPage() {
   const handleCreateClient = (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspace) return;
+    if (!teamAssignments["Account/Social Media Manager"] || teamAssignments["Account/Social Media Manager"] === "unassigned") {
+      toast.error("Please assign an Account/Social Media Manager.");
+      return;
+    }
     createClient.mutate({
       workspace_id: workspace.workspaceId,
       name,
@@ -97,11 +127,12 @@ function ClientsPage() {
       industry,
       platforms: selectedPlatforms,
       status,
+      team_assignments: teamAssignments,
     }, {
       onSuccess: () => {
         toast.success("Client added successfully!");
         setIsAddOpen(false);
-        setName(""); setEmail(""); setIndustry(""); setSelectedPlatforms([]); setStatus("Planning");
+        setName(""); setEmail(""); setIndustry(""); setSelectedPlatforms([]); setStatus("Planning"); setTeamAssignments({});
       },
       onError: (err) => toast.error(err.message),
     });
@@ -114,11 +145,16 @@ function ClientsPage() {
     setEditIndustry(c.industry ?? "");
     setEditStatus(c.status);
     setEditPlatforms(c.platforms ?? []);
+    setEditTeamAssignments(c.team_assignments || {});
   };
 
   const handleUpdateClient = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editClient || !workspace) return;
+    if (!editTeamAssignments["Account/Social Media Manager"] || editTeamAssignments["Account/Social Media Manager"] === "unassigned") {
+      toast.error("Please assign an Account/Social Media Manager.");
+      return;
+    }
     updateClient.mutate({
       id: editClient.id,
       workspace_id: workspace.workspaceId,
@@ -128,6 +164,7 @@ function ClientsPage() {
         industry: editIndustry || null,
         platforms: editPlatforms,
         status: editStatus,
+        team_assignments: editTeamAssignments,
       },
     }, {
       onSuccess: () => {
@@ -174,28 +211,104 @@ function ClientsPage() {
     );
   };
 
-  const filteredClients = clients.filter(c => {
-    if (c.status === "Closed") return false;  // Hide closed clients from main list
+  const isEmployee = workspace?.role === "employee";
+  const myUserId = workspace?.userId;
+
+  const accessibleClients = isEmployee
+    ? clients.filter(c => Object.values(c.team_assignments || {}).includes(myUserId!))
+    : clients;
+
+  const filteredClients = accessibleClients.filter(c => {
+    const isInactive = c.status === "Closed" || c.status === "Inactive";
+    const mappedStatus = isInactive ? "Inactive" : "Active";
+    
+    if (statusFilter !== "All Statuses" && mappedStatus !== statusFilter) return false;
+
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = statusFilter === "All Statuses" || c.status === statusFilter;
     const matchesPlatform = platformFilter === "All Platforms" || (c.platforms && c.platforms.includes(platformFilter));
-    return matchesSearch && matchesStatus && matchesPlatform;
+    return matchesSearch && matchesPlatform;
   });
 
-  const filteredMembers = clientMembers.filter((m) => {
+  const accessibleMembers = isEmployee ? [] : members;
+  const filteredMembers = accessibleMembers.filter(m => {
+    if (statusFilter !== "All Statuses" && statusFilter !== "Active") return false;
     const n = m.users?.full_name || m.users?.email?.split("@")[0] || "";
-    const em = m.users?.email || "";
-    const q = searchTerm.toLowerCase();
-    const matchesSearch = n.toLowerCase().includes(q) || em.toLowerCase().includes(q);
-    const matchesStatus = statusFilter === "All Statuses";
-    const matchesPlatform = platformFilter === "All Platforms";
-    return matchesSearch && matchesStatus && matchesPlatform;
+    const matchesSearch = n.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (m.users?.email && m.users.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Exclude members who are already initialized as clients
+    const isAlreadyClient = clients.some(c => c.name.toLowerCase() === n.toLowerCase() || c.email === m.users?.email);
+    return matchesSearch && !isAlreadyClient;
   });
+
+  const getClientFinancials = (clientName: string) => {
+    const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === clientName.toLowerCase());
+    const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+    const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
+    const pendingPayment = totalRevenue - advancePaid;
+    return { totalRevenue, advancePaid, pendingPayment };
+  };
+
+  const sortedClients = [...filteredClients].sort((a, b) => {
+    switch (sortBy) {
+      case "oldest": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      case "name_asc": return a.name.localeCompare(b.name);
+      case "name_desc": return b.name.localeCompare(a.name);
+      case "revenue_desc": return getClientFinancials(b.name).totalRevenue - getClientFinancials(a.name).totalRevenue;
+      case "revenue_asc": return getClientFinancials(a.name).totalRevenue - getClientFinancials(b.name).totalRevenue;
+      case "pending_desc": return getClientFinancials(b.name).pendingPayment - getClientFinancials(a.name).pendingPayment;
+      case "advance_desc": return getClientFinancials(b.name).advancePaid - getClientFinancials(a.name).advancePaid;
+      case "newest":
+      default:
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+  });
+
+  const sortedMembers = [...filteredMembers].sort((a, b) => {
+    const nameA = a.users?.full_name || a.users?.email?.split("@")[0] || "Unknown";
+    const nameB = b.users?.full_name || b.users?.email?.split("@")[0] || "Unknown";
+    switch (sortBy) {
+      case "name_asc": return nameA.localeCompare(nameB);
+      case "name_desc": return nameB.localeCompare(nameA);
+      case "oldest": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      case "newest":
+      case "revenue_desc":
+      case "revenue_asc":
+      case "pending_desc":
+      case "advance_desc":
+      default:
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+  });
+
+  const handleInitializeWorkspaceClient = async (m: any) => {
+    if (!workspace) return;
+    const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+    const e = m.users?.email || "";
+    setIsInitializing(m.user_id);
+    
+    try {
+      const newClient = await createClient.mutateAsync({
+         workspace_id: workspace.workspaceId,
+         name: n,
+         email: e,
+         industry: "",
+         platforms: [],
+         status: "Active",
+         team_assignments: {},
+      });
+      toast.success("CRM Profile initialized!");
+      navigate({ to: '/clients/$clientId', params: { clientId: newClient.id } });
+    } catch (err: any) {
+      toast.error("Failed to initialize CRM profile.");
+    } finally {
+      setIsInitializing(null);
+    }
+  };
 
   return (
     <AppShell
-      title="Clients"
+      title="Client Management"
       subtitle="All active and onboarding accounts across the agency."
       actions={
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -248,6 +361,77 @@ function ClientsPage() {
                     {Object.keys(STATUS_TONE).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-3 border-t border-border pt-4 mt-2">
+                <Label className="text-sm font-semibold">Team Assignment *</Label>
+                {ASSIGNABLE_ROLES.map(role => (
+                  <div key={role} className="flex items-center gap-2">
+                    <Label className="w-1/3 text-xs text-muted-foreground">{role}</Label>
+                    <Popover open={addManagerOpen === role} onOpenChange={(open) => setAddManagerOpen(open ? role : null)}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={addManagerOpen === role}
+                          className="flex-1 justify-between font-normal bg-background"
+                        >
+                          {teamAssignments[role] && teamAssignments[role] !== "unassigned"
+                            ? (() => {
+                                const m = staffMembers.find((m) => m.user_id === teamAssignments[role]);
+                                if (!m) return "Select Manager";
+                                const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                                const em = m.users?.email || "";
+                                return `${n} ${em ? `(${em})` : ""}`;
+                              })()
+                            : "Select Manager"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search manager..." />
+                          <CommandList>
+                            <CommandEmpty>No manager found.</CommandEmpty>
+                            <CommandGroup>
+                              <CommandItem
+                                value="unassigned"
+                                onSelect={() => {
+                                  setTeamAssignments(prev => ({...prev, [role]: ""}));
+                                  setAddManagerOpen(null);
+                                }}
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${(!teamAssignments[role] || teamAssignments[role] === "unassigned") ? "opacity-100" : "opacity-0"}`}
+                                />
+                                Select Manager
+                              </CommandItem>
+                              {staffMembers.filter(m => (m.agency_role || "Social Media Manager") === (role === "Account/Social Media Manager" ? "Social Media Manager" : role)).map(m => {
+                                const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                                const em = m.users?.email || "";
+                                const displayName = `${n} ${em ? `(${em})` : ""}`;
+                                return (
+                                  <CommandItem
+                                    key={m.user_id}
+                                    value={displayName}
+                                    onSelect={() => {
+                                      setTeamAssignments(prev => ({...prev, [role]: m.user_id}));
+                                      setAddManagerOpen(null);
+                                    }}
+                                  >
+                                    <Check
+                                      className={`mr-2 h-4 w-4 ${teamAssignments[role] === m.user_id ? "opacity-100" : "opacity-0"}`}
+                                    />
+                                    {displayName}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                ))}
               </div>
               <Button type="submit" className="w-full" disabled={createClient.isPending}>
                 {createClient.isPending ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
@@ -306,6 +490,77 @@ function ClientsPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-3 border-t border-border pt-4 mt-2">
+              <Label className="text-sm font-semibold">Team Assignment *</Label>
+              {ASSIGNABLE_ROLES.map(role => (
+                <div key={role} className="flex items-center gap-2">
+                  <Label className="w-1/3 text-xs text-muted-foreground">{role}</Label>
+                  <Popover open={editManagerOpen === role} onOpenChange={(open) => setEditManagerOpen(open ? role : null)}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={editManagerOpen === role}
+                        className="flex-1 justify-between font-normal bg-background"
+                      >
+                        {editTeamAssignments[role] && editTeamAssignments[role] !== "unassigned"
+                          ? (() => {
+                              const m = staffMembers.find((m) => m.user_id === editTeamAssignments[role]);
+                              if (!m) return "Select Manager";
+                              const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                              const em = m.users?.email || "";
+                              return `${n} ${em ? `(${em})` : ""}`;
+                            })()
+                          : "Select Manager"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search manager..." />
+                        <CommandList>
+                          <CommandEmpty>No manager found.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="unassigned"
+                              onSelect={() => {
+                                setEditTeamAssignments(prev => ({...prev, [role]: ""}));
+                                setEditManagerOpen(null);
+                              }}
+                            >
+                              <Check
+                                className={`mr-2 h-4 w-4 ${(!editTeamAssignments[role] || editTeamAssignments[role] === "unassigned") ? "opacity-100" : "opacity-0"}`}
+                              />
+                              Select Manager
+                            </CommandItem>
+                            {staffMembers.filter(m => (m.agency_role || "Social Media Manager") === (role === "Account/Social Media Manager" ? "Social Media Manager" : role)).map(m => {
+                              const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                              const em = m.users?.email || "";
+                              const displayName = `${n} ${em ? `(${em})` : ""}`;
+                              return (
+                                <CommandItem
+                                  key={m.user_id}
+                                  value={displayName}
+                                  onSelect={() => {
+                                    setEditTeamAssignments(prev => ({...prev, [role]: m.user_id}));
+                                    setEditManagerOpen(null);
+                                  }}
+                                >
+                                  <Check
+                                    className={`mr-2 h-4 w-4 ${editTeamAssignments[role] === m.user_id ? "opacity-100" : "opacity-0"}`}
+                                  />
+                                  {displayName}
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              ))}
+            </div>
             <div className="flex gap-2 pt-1">
               <Button type="button" variant="outline" className="flex-1" onClick={() => setEditClient(null)}>Cancel</Button>
               <Button type="submit" className="flex-1" disabled={updateClient.isPending}>
@@ -351,7 +606,24 @@ function ClientsPage() {
           </div>
           {/* Filters — horizontal scroll row on mobile */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <Button variant="outline" className="rounded-xl h-10 shrink-0"><Filter className="h-4 w-4" /> Filters</Button>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-[140px] h-10 rounded-xl bg-background shrink-0">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">Sort By</span>
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Newest First</SelectItem>
+                <SelectItem value="oldest">Oldest First</SelectItem>
+                <SelectItem value="name_asc">Name (A-Z)</SelectItem>
+                <SelectItem value="name_desc">Name (Z-A)</SelectItem>
+                <SelectItem value="revenue_desc">Revenue (High - Low)</SelectItem>
+                <SelectItem value="revenue_asc">Revenue (Low - High)</SelectItem>
+                <SelectItem value="pending_desc">Pending Amt (High - Low)</SelectItem>
+                <SelectItem value="advance_desc">Advance Paid (High - Low)</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background shrink-0">
                 <SelectValue placeholder="All Statuses" />
@@ -373,151 +645,152 @@ function ClientsPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto -mx-4 sm:-mx-5 px-4 sm:px-5">
-          <table className="w-full text-sm min-w-[900px]">
-            <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                <th className="font-semibold px-3 py-3">Client</th>
-                <th className="font-semibold px-3 py-3">Industry</th>
-                <th className="font-semibold px-3 py-3">Platforms</th>
-                <th className="font-semibold px-3 py-3">Status</th>
-                <th className="font-semibold px-3 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={5} className="text-center py-20"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {isLoading ? (
+            <div className="col-span-full py-20 flex justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              {filteredClients.length === 0 && filteredMembers.length === 0 ? (
+                <div className="col-span-full text-center py-20 text-muted-foreground">
+                  No clients found. Click 'Add Client' to add your first one!
+                </div>
               ) : (
                 <>
-                  {/* ── Business Clients ── */}
-                  {filteredClients.length === 0 && filteredMembers.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center py-20 text-muted-foreground">No clients found. Click 'Add Client' to add your first one!</td></tr>
-                  ) : (
-                    filteredClients.map((c) => (
-                      <tr key={c.id} className="border-t border-border hover:bg-muted/40 transition-colors">
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-9 w-9 shrink-0 rounded-xl grid place-items-center text-white text-xs font-semibold" style={{ background: getClientAvatarColor(c.name) }}>
-                              {getInitials(c.name)}
+                  {sortedClients.map((c) => {
+                  const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === c.name.toLowerCase());
+                  const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+                  const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
+                  const pendingPayment = totalRevenue - advancePaid;
+                  
+                  return (
+                    <div 
+                      key={c.id} 
+                      onClick={() => navigate({ to: '/clients/$clientId', params: { clientId: c.id } })}
+                      className="relative rounded-2xl border border-border bg-[#F9FAFB]/50 p-5 shadow-sm hover:shadow-md transition-all flex flex-col h-full overflow-hidden cursor-pointer group"
+                    >
+                      {/* Active/Inactive Badge */}
+                      <div className="absolute top-5 right-5">
+                        <Badge className={`rounded-sm font-bold tracking-wider text-[10px] px-2 py-0.5 border-0 ${c.status === 'Closed' ? 'bg-muted text-muted-foreground' : 'bg-emerald-50 text-emerald-600'}`}>
+                          {c.status === 'Closed' ? 'INACTIVE' : 'ACTIVE'}
+                        </Badge>
+                      </div>
+
+                      <div className="mb-4 pr-16">
+                        <span className="font-bold text-[17px] truncate block group-hover:text-primary transition-colors text-[#1C1917]">
+                          {c.name}
+                        </span>
+                        <div className="text-xs text-muted-foreground truncate font-medium mt-0.5">{c.industry || "No industry"}</div>
+                      </div>
+
+                      <div className="flex flex-col gap-2 flex-1 mt-3">
+                        {workspace?.role !== "employee" && (
+                          <>
+                            <div className="flex justify-between text-[13px]">
+                              <span className="text-muted-foreground font-medium flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Total revenue</span>
+                              <span className="font-bold text-emerald-600 flex items-center"><IndianRupee className="w-3 h-3" />{totalRevenue.toLocaleString("en-IN")}</span>
                             </div>
-                            <div className="min-w-0">
-                              <div className="font-semibold truncate">{c.name}</div>
-                              <div className="text-xs text-muted-foreground truncate">{c.email || "No email provided"}</div>
+                            <div className="flex justify-between text-[13px]">
+                              <span className="text-muted-foreground font-medium flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Advance Paid</span>
+                              <span className="font-bold text-foreground flex items-center"><IndianRupee className="w-3 h-3" />{advancePaid.toLocaleString("en-IN")}</span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 text-foreground/80">{c.industry || "-"}</td>
-                        <td className="px-3 py-3">
+                            <div className="flex justify-between text-[13px]">
+                              <span className="text-muted-foreground font-medium flex items-center gap-1.5"><AlertOctagon className="w-3.5 h-3.5" /> Outstanding</span>
+                              <span className="font-bold text-rose-500 flex items-center"><IndianRupee className="w-3 h-3" />{pendingPayment.toLocaleString("en-IN")}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className={`flex justify-between text-[13px] ${workspace?.role !== 'employee' ? 'mt-1 border-t border-border/60 pt-2.5' : ''}`}>
+                          <span className="text-muted-foreground font-medium flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Start</span>
+                          <span className="font-semibold text-foreground">{new Date(c.created_at).toLocaleDateString("en-GB", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 pt-4 border-t border-border/60 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Allocated Manager</span>
+                          {(() => {
+                            const managerId = c.team_assignments?.["Account/Social Media Manager"];
+                            const member = managerId ? members.find(m => m.user_id === managerId) : null;
+                            const n = member ? (member.users?.full_name || member.users?.email?.split("@")[0] || "Unknown") : "Unassigned";
+                            return <span className="text-xs font-semibold text-foreground truncate max-w-[140px] text-right">{n}</span>;
+                          })()}
+                        </div>
+                        <div className="flex items-center justify-between pb-1">
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Platforms</span>
                           <div className="flex -space-x-1">
                             {c.platforms?.map((p) => (
-                              <span key={p} title={p} className="h-6 w-6 rounded-full ring-2 ring-white grid place-items-center text-[10px] font-bold text-white" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || '#666' }}>
-                                {p[0]}
+                              <span key={p} title={p} className="h-6 w-6 rounded-full ring-2 ring-[#F9FAFB] grid place-items-center text-white shadow-sm" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || '#666' }}>
+                                {getPlatformIcon(p)}
                               </span>
                             ))}
-                            {(!c.platforms || c.platforms.length === 0) && <span className="text-muted-foreground">-</span>}
+                            {(!c.platforms || c.platforms.length === 0) && <span className="text-muted-foreground text-xs">-</span>}
                           </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <Badge className={`rounded-full font-medium border-0 ${STATUS_TONE[c.status] || STATUS_TONE.Planning}`}>{c.status}</Badge>
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                              <DropdownMenuItem
-                                disabled={!isAdmin}
-                                onClick={() => openEdit(c)}
-                                className="gap-2"
-                              >
-                                <Pencil className="h-3.5 w-3.5" /> Edit Client
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={!isAdmin}
-                                onClick={() => setCloseTarget(c)}
-                                className="gap-2 text-[#F59E0B]"
-                              >
-                                <Archive className="h-3.5 w-3.5" /> Close Client
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                disabled={!isAdmin}
-                                className="text-red-600 gap-2"
-                                onClick={() => setDeleteTarget(c)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" /> Delete Client
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-
-                  {/* ── Client Members (workspace_members with role='client') ── */}
-                  {filteredMembers.length > 0 && (
-                    <>
-                      <tr>
-                        <td colSpan={5} className="px-3 pt-5 pb-2">
-                          <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">
-                            <Users className="h-3.5 w-3.5" />
-                            Client Members (Workspace)
+                        </div>
+                        <div className="flex items-center justify-end gap-1 opacity-40 hover:opacity-100 transition-opacity mt-2 pt-3 border-t border-border/40">
+                          <button disabled={!isAdmin} onClick={(e) => { e.stopPropagation(); openEdit(c); }} className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted inline-grid place-items-center transition-colors">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button disabled={!isAdmin} onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }} className="h-7 w-7 rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-500 inline-grid place-items-center transition-colors">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                  })}
+                  {sortedMembers.map((m) => {
+                    const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                    return (
+                      <div 
+                        key={m.user_id}
+                        onClick={() => handleInitializeWorkspaceClient(m)}
+                        className={`relative rounded-2xl border border-border bg-[#F9FAFB]/50 p-5 shadow-sm hover:shadow-md transition-all flex flex-col h-full overflow-hidden cursor-pointer group ${isInitializing === m.user_id ? 'opacity-50 pointer-events-none' : ''}`}
+                      >
+                        <div className="absolute top-5 right-5">
+                          <Badge className="rounded-sm font-bold tracking-wider text-[10px] px-2 py-0.5 border-0 bg-emerald-50 text-emerald-600">
+                            WORKSPACE CLIENT
+                          </Badge>
+                        </div>
+                        <div className="mb-4 pr-16">
+                          <span className="font-bold text-[17px] truncate block group-hover:text-primary transition-colors text-[#1C1917]">
+                            {n}
+                          </span>
+                          <div className="text-xs text-muted-foreground truncate font-medium mt-0.5">{m.users?.email || "No email"}</div>
+                        </div>
+                        <div className="flex flex-col gap-2 flex-1 mt-3 opacity-60 pointer-events-none">
+                          <div className="flex justify-between text-[13px]">
+                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Total revenue</span>
+                            <span className="font-bold text-emerald-600 flex items-center"><IndianRupee className="w-3 h-3" />0</span>
                           </div>
-                        </td>
-                      </tr>
-                      {filteredMembers.map((m) => {
-                        const displayName = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
-                        const displayEmail = m.users?.email || "—";
-                        return (
-                          <tr key={m.user_id} className="border-t border-border hover:bg-muted/40 transition-colors">
-                            <td className="px-3 py-3">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div
-                                  className="h-9 w-9 shrink-0 rounded-xl grid place-items-center text-white text-xs font-semibold"
-                                  style={{ background: getClientAvatarColor(displayName) }}
-                                >
-                                  {getInitials(displayName)}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="font-semibold truncate flex items-center gap-2">
-                                    {displayName}
-                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 leading-none">
-                                      Workspace Client
-                                    </span>
-                                  </div>
-                                  <div className="text-xs text-muted-foreground truncate">{displayEmail}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 text-muted-foreground text-xs">—</td>
-                            <td className="px-3 py-3 text-muted-foreground text-xs">—</td>
-                            <td className="px-3 py-3">
-                              <Badge className="rounded-full font-medium border-0 bg-emerald-50 text-emerald-700">Active</Badge>
-                            </td>
-                            <td className="px-3 py-3 text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button className="h-8 w-8 rounded-lg hover:bg-muted inline-grid place-items-center"><MoreHorizontal className="h-4 w-4" /></button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem>Edit Access</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem className="text-red-600">Remove Member</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </>
-                  )}
+                          <div className="flex justify-between text-[13px]">
+                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Advance Paid</span>
+                            <span className="font-bold text-foreground flex items-center"><IndianRupee className="w-3 h-3" />0</span>
+                          </div>
+                          <div className="flex justify-between text-[13px]">
+                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><AlertOctagon className="w-3.5 h-3.5" /> Outstanding</span>
+                            <span className="font-bold text-rose-500 flex items-center"><IndianRupee className="w-3 h-3" />0</span>
+                          </div>
+                          <div className="flex justify-between text-[13px] mt-1 border-t border-border/60 pt-2.5">
+                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Start</span>
+                            <span className="font-semibold text-foreground">{new Date(m.created_at).toLocaleDateString("en-GB", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          </div>
+                        </div>
+                        <div className="mt-4 text-center text-[10px] font-bold text-primary uppercase tracking-widest border-t border-border/60 pt-3 group-hover:bg-primary/5 rounded-b-xl -mx-5 -mb-5 pb-5 transition-colors">
+                          {isInitializing === m.user_id ? (
+                            <span className="flex items-center justify-center gap-2"><Loader2 className="w-3 h-3 animate-spin"/> INITIALIZING...</span>
+                          ) : (
+                            "CLICK TO SETUP CRM PROFILE"
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </>
               )}
-            </tbody>
-          </table>
+            </>
+          )}
         </div>
       </div>
 

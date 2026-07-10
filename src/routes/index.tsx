@@ -16,7 +16,8 @@ import {
 } from "recharts";
 import { PLATFORM_COLOR } from "@/lib/demo-data";
 import { supabase } from "@/lib/supabase";
-import { useCurrentWorkspace, useDashboardStats, useRevenueGraph, usePosts, useClients, useWorkspaceMembers, useMeetings, useSocialAccounts, useQuotations } from "@/lib/queries";
+import { subDays, subMonths, format, eachDayOfInterval, eachMonthOfInterval, eachHourOfInterval, startOfToday, endOfToday } from "date-fns";
+import { useCurrentWorkspace, useDashboardStats, usePosts, useClients, useWorkspaceMembers, useMeetings, useSocialAccounts, useDeals } from "@/lib/queries";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "Dashboard — SocialNxt CRM" }] }),
@@ -43,32 +44,134 @@ function Dashboard() {
   const navigate = useNavigate();
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const stats = useDashboardStats(workspace?.workspaceId);
-  const { data: revenueData = [] } = useRevenueGraph(workspace?.workspaceId);
   const { data: allPostsRaw = [] } = usePosts(workspace?.workspaceId);
   const { data: clientsRaw = [] } = useClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: allMeetingsRaw = [] } = useMeetings(workspace?.workspaceId);
   const { data: accounts = [] } = useSocialAccounts(workspace?.workspaceId);
-  const { data: allQuotationsRaw = [] } = useQuotations(workspace?.workspaceId);
+  const { data: dealsRaw = [] } = useDeals(workspace?.workspaceId);
 
   const isClient = workspace?.role === "client";
+  const isEmployee = workspace?.role === "employee";
   const clientName = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
+  const myUserId = workspace?.userId;
+
+  const accessibleClients = isEmployee
+    ? clientsRaw.filter(c => Object.values((c as any).team_assignments || {}).includes(myUserId))
+    : clientsRaw;
+
+  const clients = isClient
+    ? accessibleClients.filter((c) => c.name.toLowerCase() === clientName.toLowerCase())
+    : accessibleClients;
+
+  const accessiblePosts = isEmployee
+    ? allPostsRaw.filter(p => {
+        const clientMatch = accessibleClients.some(c => c.name.toLowerCase() === p.client_name?.toLowerCase());
+        const assignedMatch = p.assigned_to && p.assigned_to.includes(myUserId!);
+        return clientMatch || assignedMatch;
+      })
+    : allPostsRaw;
 
   const allPosts = isClient 
-    ? allPostsRaw.filter(p => p.client_name?.toLowerCase() === clientName.toLowerCase())
-    : allPostsRaw;
+    ? accessiblePosts.filter(p => p.client_name?.toLowerCase() === clientName.toLowerCase())
+    : accessiblePosts;
 
   const allMeetings = isClient
     ? allMeetingsRaw.filter((m) => (m as any).client_id === workspace?.userId)
     : allMeetingsRaw;
 
-  const allQuotations = isClient
-    ? allQuotationsRaw.filter(q => q.client_name?.toLowerCase() === clientName.toLowerCase() && q.status !== "Draft")
-    : allQuotationsRaw;
+  const deals = isClient
+    ? dealsRaw.filter(d => d.client_name?.toLowerCase() === clientName.toLowerCase())
+    : dealsRaw;
 
-  const clients = isClient
-    ? clientsRaw.filter((c) => c.name.toLowerCase() === clientName.toLowerCase())
-    : clientsRaw;
+  const [chartMetric, setChartMetric] = useState<"Revenue" | "Clients Onboarded" | "Tasks Created">(isEmployee ? "Tasks Created" : "Revenue");
+  const [timeRange, setTimeRange] = useState<"Today" | "Last 7 Days" | "Last 30 Days" | "All Time">("Last 7 Days");
+
+  // ─── Timeline Data Calculation ────────────────────────────────────────────────
+  let buckets: any[] = [];
+  let filterAfterDate: Date | null = null;
+  const now = new Date();
+
+  if (timeRange === "Today") {
+    filterAfterDate = startOfToday();
+    buckets = eachHourOfInterval({ start: startOfToday(), end: endOfToday() }).map(d => ({
+      key: format(d, "ha"),
+      month: format(d, "ha"),
+      rawDate: d,
+      totalRevenue: 0, pendingRevenue: 0, clients: 0, tasks: 0
+    }));
+  } else if (timeRange === "Last 7 Days") {
+    filterAfterDate = subDays(now, 6);
+    buckets = eachDayOfInterval({ start: filterAfterDate, end: now }).map(d => ({
+      key: format(d, "yyyy-MM-dd"),
+      month: format(d, "MMM dd"),
+      rawDate: d,
+      totalRevenue: 0, pendingRevenue: 0, clients: 0, tasks: 0
+    }));
+  } else if (timeRange === "Last 30 Days") {
+    filterAfterDate = subDays(now, 29);
+    buckets = eachDayOfInterval({ start: filterAfterDate, end: now }).map(d => ({
+      key: format(d, "yyyy-MM-dd"),
+      month: format(d, "MMM dd"),
+      rawDate: d,
+      totalRevenue: 0, pendingRevenue: 0, clients: 0, tasks: 0
+    }));
+  } else {
+    // All time
+    let earliest = new Date();
+    [...deals, ...clients, ...allPosts].forEach(item => {
+      if ((item as any).created_at) {
+        const d = new Date((item as any).created_at);
+        if (d < earliest) earliest = d;
+      }
+    });
+    if (earliest.getTime() > subMonths(now, 1).getTime()) earliest = subMonths(now, 1);
+    
+    buckets = eachMonthOfInterval({ start: earliest, end: now }).map(d => ({
+      key: format(d, "yyyy-MM"),
+      month: format(d, "MMM yyyy"),
+      rawDate: d,
+      totalRevenue: 0, pendingRevenue: 0, clients: 0, tasks: 0
+    }));
+  }
+
+  const timelineMap = buckets.reduce((acc, b) => {
+    acc[b.key] = b;
+    return acc;
+  }, {} as Record<string, typeof buckets[0]>);
+
+  const getBucketKey = (dateStr: string) => {
+    const d = dateStr ? new Date(dateStr) : new Date();
+    if (timeRange === "Today") return format(d, "ha");
+    if (timeRange === "Last 7 Days" || timeRange === "Last 30 Days") return format(d, "yyyy-MM-dd");
+    return format(d, "yyyy-MM");
+  };
+
+  deals.forEach(d => {
+    const dateStr = d.created_at || new Date().toISOString();
+    if (filterAfterDate && new Date(dateStr) < filterAfterDate) return;
+    const key = getBucketKey(dateStr);
+    if (timelineMap[key]) {
+      timelineMap[key].totalRevenue += Number(d.amount || 0);
+      timelineMap[key].pendingRevenue += Number((d.amount || 0) - (d.advance_paid || 0));
+    }
+  });
+
+  clients.forEach(c => {
+    const dateStr = c.created_at || new Date().toISOString();
+    if (filterAfterDate && new Date(dateStr) < filterAfterDate) return;
+    const key = getBucketKey(dateStr);
+    if (timelineMap[key]) timelineMap[key].clients += 1;
+  });
+
+  allPosts.forEach(p => {
+    const dateStr = p.created_at || new Date().toISOString();
+    if (filterAfterDate && new Date(dateStr) < filterAfterDate) return;
+    const key = getBucketKey(dateStr);
+    if (timelineMap[key]) timelineMap[key].tasks += 1;
+  });
+
+  const timelineData = Object.values(timelineMap).sort((a: any, b: any) => a.rawDate.getTime() - b.rawDate.getTime());
 
   // ─── Platform Distribution (real) ───────────────────────────────────────────
   const platformCounts: Record<string, number> = {};
@@ -116,12 +219,10 @@ function Dashboard() {
   // ─── Recent Activities (real) ────────────────────────────────────────────────
   const recentActivities = [
     ...allPosts.map(p => ({ type: "post", ts: p.updated_at, item: p })),
-    ...allQuotations.map(q => ({ type: "quotation", ts: q.updated_at, item: q }))
   ]
     .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
     .slice(0, 5)
     .map((entry) => {
-      if (entry.type === "post") {
         const p = entry.item as any;
         const authorMember = members.find((m) => m.user_id === p.author_id);
         const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
@@ -130,16 +231,6 @@ function Dashboard() {
         const diffH = Math.floor(diffMs / 3600000);
         const when = diffH < 1 ? "Just now" : diffH < 24 ? `${diffH}h ago` : diffH < 48 ? "Yesterday" : `${Math.floor(diffH / 24)}d ago`;
         return { who, what: `${action} — ${p.topic || p.client_name || "post"}`, when };
-      } else {
-        const q = entry.item as any;
-        const authorMember = members.find((m) => m.user_id === q.created_by);
-        const who = authorMember?.users?.full_name || authorMember?.users?.email?.split("@")[0] || "Someone";
-        const action = q.status === "Sent" ? "sent quotation" : q.status === "Approved" ? "approved quotation" : "updated quotation";
-        const diffMs = Date.now() - new Date(q.updated_at).getTime();
-        const diffH = Math.floor(diffMs / 3600000);
-        const when = diffH < 1 ? "Just now" : diffH < 24 ? `${diffH}h ago` : diffH < 48 ? "Yesterday" : `${Math.floor(diffH / 24)}d ago`;
-        return { who, what: `${action} — ${q.quotation_number}`, when };
-      }
     });
 
   // ─── Upcoming Meetings (real) ────────────────────────────────────────────────
@@ -291,31 +382,88 @@ function Dashboard() {
       {workspace?.role !== "client" && (
         <>
       {/* Charts row */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
-        <div className="card-soft p-5 xl:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-sm font-semibold">Monthly Revenue</div>
-              <div className="text-xs text-muted-foreground">Last 6 months (in ₹ thousands)</div>
+
+
+      <div className="grid grid-cols-1 gap-4 mt-4">
+        {/* Performance Overview Chart */}
+        <div className="card-soft p-5 lg:col-span-2 xl:col-span-1">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+            <div className="text-lg font-bold">Performance Overview</div>
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+              <div className="flex bg-muted/50 p-1 rounded-xl overflow-x-auto scrollbar-hide">
+                {["Revenue", "Clients Onboarded", "Tasks Created"].filter(m => !(isEmployee && m === "Revenue")).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setChartMetric(m as any)}
+                    className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${chartMetric === m ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="flex bg-muted/50 p-1 rounded-xl overflow-x-auto scrollbar-hide ml-0 sm:ml-2">
+                {["Today", "Last 7 Days", "Last 30 Days", "All Time"].map(r => (
+                  <button
+                    key={r}
+                    onClick={() => setTimeRange(r as any)}
+                    className={`flex-1 sm:flex-none px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all ${timeRange === r ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
             </div>
-            <Badge variant="secondary" className="rounded-full">+18.2%</Badge>
           </div>
-          <div className="h-64">
-            <ResponsiveContainer>
-              <AreaChart data={revenueData.length ? revenueData : [{ month: "Jan", revenue: 0 }]}>
-                <defs>
-                  <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2563EB" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" />
-                <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 12 }} />
-                <Area type="monotone" dataKey="revenue" stroke="#2563EB" strokeWidth={2.5} fill="url(#rev)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="h-72 w-full mt-4">
+            {timelineData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">No data available yet</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={timelineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorPending" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorClients" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorTasks" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} tickFormatter={(val) => chartMetric === 'Revenue' ? `₹${val.toLocaleString("en-IN")}` : val} />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(val: number, name: string) => [
+                      chartMetric === 'Revenue' ? `₹${val.toLocaleString("en-IN")}` : val, 
+                      name
+                    ]}
+                  />
+                  {chartMetric === "Revenue" && (
+                    <>
+                      <Area type="monotone" name="Total Revenue" dataKey="totalRevenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#10b981', strokeWidth: 0 }} />
+                      <Area type="monotone" name="Pending Payments" dataKey="pendingRevenue" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorPending)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />
+                    </>
+                  )}
+                  {chartMetric === "Clients Onboarded" && (
+                    <Area type="monotone" name="Clients" dataKey="clients" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorClients)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} />
+                  )}
+                  {chartMetric === "Tasks Created" && (
+                    <Area type="monotone" name="Tasks" dataKey="tasks" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorTasks)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 0 }} />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -414,7 +562,9 @@ function Dashboard() {
               const statusColor = t.status === "pending_approval" ? "bg-[#F59E0B]" : t.status === "draft" ? "bg-[#9CA3AF]" : "bg-[#10B981]";
               const isCollab = Array.isArray(t.assigned_to) && t.assigned_to.length > 1;
               const assignedMember = members.find((m) => Array.isArray(t.assigned_to) ? t.assigned_to.includes(m.user_id) : m.user_id === (t.assigned_to as any));
-              const assigneeName = isCollab ? "Collab" : (assignedMember?.users?.full_name || assignedMember?.users?.email?.split("@")[0] || "Unassigned");
+              const baseName = assignedMember?.users?.full_name || assignedMember?.users?.email?.split("@")[0] || "Unassigned";
+              const roleName = assignedMember?.role === "admin" ? "Admin" : (assignedMember?.agency_role || "Social Media Manager");
+              const assigneeName = isCollab ? "Collab" : (baseName !== "Unassigned" ? `${baseName} (${roleName})` : "Unassigned");
               return (
                 <div key={t.id} className="flex items-start gap-3">
                   <div className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${statusColor}`} />

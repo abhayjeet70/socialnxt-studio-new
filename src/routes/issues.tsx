@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,14 @@ function IssuesPage() {
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterClient, setFilterClient] = useState<string>("all");
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const clientParam = params.get("client");
+    if (clientParam) {
+      setFilterClient(clientParam);
+    }
+  }, []);
+
   const updateIssue = useUpdateIssue();
   const deleteIssue = useDeleteIssue();
 
@@ -74,9 +82,19 @@ function IssuesPage() {
     return true;
   });
 
+  const resolveClientName = (id: string): string | null => {
+    if (id === "none") return null;
+    const c = activeClients.find((c) => c.id === id);
+    if (c) return c.name;
+    const m = clientMembers.find((m) => m.user_id === id);
+    if (m) return m.users?.full_name || m.users?.email?.split("@")[0] || null;
+    return null;
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspace) return;
+    const clientName = resolveClientName(clientId);
     try {
       if (editingIssue) {
         await updateIssue.mutateAsync({
@@ -85,6 +103,7 @@ function IssuesPage() {
           description,
           issue_type: issueType as Issue["issue_type"],
           priority: priority as Issue["priority"],
+          client_name: clientName,
           ...(clientId !== "none" && { client_id: clientId }),
         });
         toast.success("Issue updated successfully!");
@@ -97,6 +116,7 @@ function IssuesPage() {
           issue_type: issueType as Issue["issue_type"],
           priority: priority as Issue["priority"],
           status: "Open",
+          client_name: clientName,
           ...(clientId !== "none" && { client_id: clientId }),
         });
         toast.success("Issue raised successfully!");

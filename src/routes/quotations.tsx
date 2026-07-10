@@ -109,9 +109,10 @@ function QuotationsPage() {
   const [filterClient, setFilterClient] = useState<string>("all");
 
   const quotations = useMemo(() => {
-    let filtered = isClient 
-      ? quotationsAll.filter(q => q.client_name?.toLowerCase() === clientName.toLowerCase() && q.status !== "Draft")
-      : quotationsAll;
+    let filtered = quotationsAll.filter(q => !q.quotation_number.startsWith("INV-"));
+    filtered = isClient 
+      ? filtered.filter(q => q.client_name?.toLowerCase() === clientName.toLowerCase() && q.status !== "Draft")
+      : filtered;
 
     return filtered.filter(q => {
       if (filterStatus !== "all" && q.status !== filterStatus) return false;

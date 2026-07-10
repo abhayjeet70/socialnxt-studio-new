@@ -224,6 +224,45 @@ function LoginPage() {
     });
   };
 
+  // ⚠️ DEV ONLY — one-click sign in. Remove before production.
+  const DEV_EMAIL = "dev@socialnxt.test";
+  const DEV_PASSWORD = "devpassword123";
+  const handleDevSignIn = async () => {
+    setIsLoading(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+    // Try sign in; if the dev account doesn't exist yet, create it, then sign in.
+    let { data, error } = await supabase.auth.signInWithPassword({
+      email: DEV_EMAIL,
+      password: DEV_PASSWORD,
+    });
+    if (error) {
+      const { error: signUpError } = await supabase.auth.signUp({
+        email: DEV_EMAIL,
+        password: DEV_PASSWORD,
+        options: { data: { full_name: "Dev User" } },
+      });
+      if (signUpError && !signUpError.message.toLowerCase().includes("already")) {
+        setIsLoading(false);
+        setErrorMsg(signUpError.message);
+        return;
+      }
+      ({ data, error } = await supabase.auth.signInWithPassword({
+        email: DEV_EMAIL,
+        password: DEV_PASSWORD,
+      }));
+    }
+    setIsLoading(false);
+    if (error) {
+      setErrorMsg(
+        error.message +
+          " — if email confirmation is ON, disable it in Supabase → Auth → Providers for dev.",
+      );
+      return;
+    }
+    if (data.session) navigate({ to: "/" });
+  };
+
   const isSignUp = mode === "signup";
 
   return (
@@ -504,6 +543,16 @@ function LoginPage() {
                   ? isSignUp ? "Creating account..." : "Signing in..."
                   : isSignUp ? "Create Admin Account" : "Sign In"}
               </Button>
+
+              {/* ⚠️ DEV ONLY — remove later */}
+              <button
+                type="button"
+                onClick={handleDevSignIn}
+                disabled={isLoading}
+                className="h-11 w-full rounded-lg border border-dashed border-[#c4b5fd] bg-[#f5f3ff] text-sm font-semibold text-[#7c3aed] transition-colors hover:bg-[#ede9fe] disabled:opacity-70"
+              >
+                ⚡ Dev Quick Sign In (temporary)
+              </button>
             </form>
 
           </>

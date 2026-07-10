@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Users, Calendar, ListTodo, Users2, Video,
   KanbanSquare, FileText, AlertOctagon, BarChart3, Settings,
-  Search, Bell, ChevronDown, LogOut, Menu, X, Activity, Archive, Receipt,
+  Search, Bell, ChevronDown, LogOut, Menu, X, Activity, Archive, Receipt, Images,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
-import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useProposals, useWorkspaceMembers, useQuotations, useIssues } from "@/lib/queries";
+import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useWorkspaceMembers, useIssues } from "@/lib/queries";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -33,10 +33,10 @@ import { Loader2, LogOut as LogOutIcon, User, CheckCircle2 } from "lucide-react"
 
 const NAV: { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean }[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/clients", label: "Clients", icon: Users, exact: true },
-  { to: "/clients/closed", label: "Closed Clients", icon: Archive },
+  { to: "/clients", label: "Client Management", icon: Users, exact: true },
   { to: "/calendar", label: "Content Calendar", icon: Calendar },
-  { to: "/tasks", label: "Tasks", icon: ListTodo },
+  { to: "/tasks", label: "Content Sheet", icon: ListTodo },
+  { to: "/media", label: "Media Library", icon: Images },
   { to: "/team", label: "Team", icon: Users2 },
   { to: "/meetings", label: "Meetings", icon: Video },
   { to: "/deals", label: "Deals", icon: KanbanSquare },
@@ -53,8 +53,7 @@ const BOTTOM_TABS = [
   { to: "/", label: "Home", icon: LayoutDashboard, exact: true },
   { to: "/clients", label: "Clients", icon: Users, exact: true },
   { to: "/calendar", label: "Calendar", icon: Calendar },
-  { to: "/tasks", label: "Tasks", icon: ListTodo },
-  { to: "/deals", label: "Deals", icon: KanbanSquare },
+  { to: "/tasks", label: "Content Sheet", icon: ListTodo },
 ];
 
 function SidebarContent({ workspace, pathname, onNavClick }: {
@@ -64,7 +63,13 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
 }) {
   const visibleNav = NAV.filter(item => {
     if (workspace?.role === "client") {
-      return ["/", "/calendar", "/tasks", "/meetings", "/proposals", "/quotations", "/issues", "/activity-logs"].includes(item.to);
+      return ["/", "/calendar", "/tasks", "/meetings", "/issues", "/activity-logs", "/proposals", "/quotations"].includes(item.to);
+    }
+    if (workspace?.role === "employee") {
+      return !["/team", "/deals", "/proposals", "/quotations"].includes(item.to);
+    }
+    if (workspace?.role === "admin" && item.to === "/media") {
+      return false;
     }
     return true;
   });
@@ -138,8 +143,6 @@ export function AppShell({ children, title, subtitle, actions }: {
   const { data: clients = [] } = useClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: posts = [] } = usePosts(workspace?.workspaceId);
-  const { data: proposals = [] } = useProposals(workspace?.workspaceId);
-  const { data: quotations = [] } = useQuotations(workspace?.workspaceId);
   const { data: issues = [] } = useIssues(workspace?.workspaceId);
 
   const query = globalSearch.toLowerCase();
@@ -153,11 +156,9 @@ export function AppShell({ children, title, subtitle, actions }: {
       })
     ].filter(c => c.name.toLowerCase().includes(query) || c.desc.toLowerCase().includes(query)),
     posts: posts.filter(p => (p.topic || "").toLowerCase().includes(query) || (p.client_name || "").toLowerCase().includes(query)),
-    proposals: proposals.filter(p => p.title.toLowerCase().includes(query) || p.client_name.toLowerCase().includes(query)),
-    quotations: quotations.filter(q => q.quotation_number.toLowerCase().includes(query) || q.client_name.toLowerCase().includes(query)),
-  } : { clients: [], posts: [], proposals: [], quotations: [] };
+  } : { clients: [], posts: [] };
 
-  const hasResults = query && (searchResults.clients.length > 0 || searchResults.posts.length > 0 || searchResults.proposals.length > 0 || searchResults.quotations.length > 0);
+  const hasResults = query && (searchResults.clients.length > 0 || searchResults.posts.length > 0);
   const showDropdown = searchFocused && query.length > 0;
 
   const recentActivities = [
@@ -179,42 +180,6 @@ export function AppShell({ children, title, subtitle, actions }: {
       icon: p.status === "approved" ? CheckCircle2 : ListTodo,
       link: "/tasks",
     })),
-    ...proposals.slice(0, 5).map(p => ({
-      ts: p.created_at || p.updated_at,
-      who: p.client_name || "Someone",
-      action: "added",
-      subject: "Proposal " + p.title,
-      color: "bg-blue-100 text-blue-700",
-      icon: FileText,
-      link: "/proposals",
-    })),
-    ...proposals.filter(p => p.updated_at && p.updated_at !== p.created_at).slice(0, 5).map(p => ({
-      ts: p.updated_at,
-      who: p.client_name,
-      action: p.status === "Approved" ? "approved" : "updated",
-      subject: "Proposal " + p.title,
-      color: p.status === "Approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
-      icon: FileText,
-      link: "/proposals",
-    })),
-    ...quotations.slice(0, 5).map(q => ({
-      ts: q.created_at || q.updated_at,
-      who: q.client_name || "Someone",
-      action: "added",
-      subject: "Quotation " + q.quotation_number,
-      color: "bg-purple-100 text-purple-700",
-      icon: Receipt,
-      link: "/quotations",
-    })),
-    ...quotations.filter(q => q.status !== "Draft" && q.updated_at && q.updated_at !== q.created_at).slice(0, 5).map(q => ({
-      ts: q.updated_at,
-      who: q.client_name,
-      action: q.status === "Sent" ? "sent" : q.status === "Approved" ? "approved" : "updated",
-      subject: "Quotation " + q.quotation_number,
-      color: q.status === "Sent" ? "bg-purple-100 text-purple-700" : q.status === "Approved" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700",
-      icon: Receipt,
-      link: "/quotations",
-    })),
     ...issues.slice(0, 5).map(i => ({
       ts: i.created_at || i.updated_at,
       who: i.client_name || "Someone",
@@ -234,7 +199,7 @@ export function AppShell({ children, title, subtitle, actions }: {
       link: "/issues",
     }))
   ]
-    .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+    .sort((a, b) => new Date(b.ts ?? 0).getTime() - new Date(a.ts ?? 0).getTime())
     .slice(0, 5);
 
   const handleEditProfile = () => {
@@ -281,26 +246,6 @@ export function AppShell({ children, title, subtitle, actions }: {
               {searchResults.posts.map(p => (
                 <Link key={p.id} to="/tasks" onClick={onClose} className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
                   {p.topic || "Untitled Task"} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
-                </Link>
-              ))}
-            </div>
-          )}
-          {searchResults.proposals.length > 0 && (
-            <div>
-              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Proposals</div>
-              {searchResults.proposals.map(p => (
-                <Link key={p.id} to="/proposals" onClick={onClose} className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
-                  {p.title} <span className="text-muted-foreground ml-2 text-xs">for {p.client_name}</span>
-                </Link>
-              ))}
-            </div>
-          )}
-          {searchResults.quotations.length > 0 && (
-            <div>
-              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quotations</div>
-              {searchResults.quotations.map(q => (
-                <Link key={q.id} to="/quotations" onClick={onClose} className="block px-3 py-2 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
-                  {q.quotation_number} <span className="text-muted-foreground ml-2 text-xs">for {q.client_name}</span>
                 </Link>
               ))}
             </div>
@@ -449,7 +394,7 @@ export function AppShell({ children, title, subtitle, actions }: {
                               <p className="text-sm leading-tight text-foreground/90">
                                 <span className="font-semibold">{act.who}</span> {act.action} <span className="font-medium">{act.subject}</span>
                               </p>
-                              <p className="text-[11px] text-muted-foreground">{new Date(act.ts).toLocaleString()}</p>
+                              <p className="text-[11px] text-muted-foreground">{act.ts ? new Date(act.ts).toLocaleString() : ""}</p>
                             </div>
                           </Link>
                           {i < recentActivities.length - 1 && <DropdownMenuSeparator className="my-0" />}

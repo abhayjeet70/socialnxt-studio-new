@@ -16,7 +16,10 @@ export type Post = {
   reference_content: string[] | null;
   completed_work: string[] | null;
   media_urls: string[] | null;
-  status: "draft" | "pending_approval" | "approved" | "scheduled" | "published" | "failed";
+  status: "draft" | "pending_approval" | "changes_requested" | "approved" | "scheduled" | "published" | "failed";
+  category?: string | null;
+  revision_note?: string | null;
+  publish_error?: string | null;
   scheduled_for: string | null;
   published_at: string | null;
   assigned_to?: string[] | null;
@@ -57,6 +60,7 @@ export type Deal = {
   client_name: string;
   project_name: string;
   amount: number;
+  advance_paid?: number;
   days: string;
   stage: string;
   created_by: string;
@@ -120,7 +124,7 @@ export function useCurrentWorkspace() {
 
       const { data, error } = await supabase
         .from("workspace_members")
-        .select("workspace_id, role, workspaces(id, name)")
+        .select("workspace_id, role, agency_role, workspaces(id, name)")
         .eq("user_id", user.id)
         .limit(1)
         .single();
@@ -131,6 +135,7 @@ export function useCurrentWorkspace() {
       return {
         workspaceId: data.workspace_id as string,
         role: data.role as string,
+        agencyRole: data.agency_role as string || "Social Media Manager",
         workspaceName: (data.workspaces as unknown as { name: string })?.name ?? "My Workspace",
         userId: user.id,
         userEmail: user.email,
@@ -252,9 +257,82 @@ export function useDeletePost() {
   });
 }
 
+/** Insert many posts at once (bulk CSV import). */
+export function useBulkCreatePosts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ rows, workspace_id }: { rows: Partial<Post>[]; workspace_id: string }) => {
+      const { data, error } = await supabase.from("posts").insert(rows).select();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["posts", variables.workspace_id] });
+    },
+  });
+}
+
+// ─── Media Library ───────────────────────────────────────────────────────────
+export type MediaAsset = {
+  id: string;
+  workspace_id: string;
+  uploaded_by: string | null;
+  url: string;
+  file_name: string | null;
+  mime_type: string | null;
+  tags: string[] | null;
+  client_id: string | null;
+  created_at: string;
+};
+
+export function useMediaAssets(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: ["media_assets", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("*")
+        .eq("workspace_id", workspaceId!)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as MediaAsset[];
+    },
+  });
+}
+
+export function useAddMediaAsset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (asset: Partial<MediaAsset> & { workspace_id: string; url: string }) => {
+      const { data, error } = await supabase.from("media_assets").insert(asset).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["media_assets", variables.workspace_id] });
+    },
+  });
+}
+
+export function useDeleteMediaAsset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; workspace_id: string }) => {
+      const { error } = await supabase.from("media_assets").delete().eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["media_assets", variables.workspace_id] });
+    },
+  });
+}
+
 export type WorkspaceMember = {
   id: string; // workspace_members.id
   role: "admin" | "employee" | "client";
+  agency_role?: string;
   user_id: string;
   created_at: string;
   users: {
@@ -273,7 +351,7 @@ export function useWorkspaceMembers(workspaceId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("workspace_members")
-        .select("id, role, user_id, created_at, users(id, email, full_name, avatar_url)")
+        .select("id, role, agency_role, user_id, created_at, users(id, email, full_name, avatar_url)")
         .eq("workspace_id", workspaceId!);
       if (error) throw error;
       return data as unknown as WorkspaceMember[];
@@ -287,6 +365,24 @@ export function useRemoveWorkspaceMember() {
       const { error } = await supabase
         .from("workspace_members")
         .delete()
+        .eq("workspace_id", workspace_id)
+        .eq("user_id", user_id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["workspace_members", variables.workspace_id] });
+    },
+  });
+}
+
+export function useUpdateAgencyRole() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ workspace_id, user_id, agency_role }: { workspace_id: string; user_id: string; agency_role: string }) => {
+      const { error } = await supabase
+        .from("workspace_members")
+        .update({ agency_role })
         .eq("workspace_id", workspace_id)
         .eq("user_id", user_id);
       if (error) throw error;
@@ -519,7 +615,9 @@ export type Issue = {
   priority: "Low" | "Medium" | "High" | "Critical";
   status: "Open" | "In Progress" | "Resolved";
   client_id?: string | null;
+  client_name?: string | null;
   created_at: string;
+  updated_at?: string | null;
   users?: Partial<User>;
 };
 
@@ -611,6 +709,7 @@ export type Client = {
   created_at: string;
   closed_at?: string | null;
   close_reason?: string | null;
+  team_assignments?: Record<string, string> | null;
 };
 
 export function useClients(workspaceId: string | undefined) {
@@ -681,14 +780,81 @@ export function useDeleteClient() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, workspace_id }: { id: string; workspace_id: string }) => {
-      const { error } = await supabase.from("clients").delete().eq("id", id);
-      if (error) throw error;
+      // Cascade delete dependent records first to avoid foreign key constraint errors
+      await supabase.from("client_socials").delete().eq("client_id", id);
+      await supabase.from("posts").delete().eq("client_id", id);
+      await supabase.from("media").delete().eq("client_id", id);
+      
+      const { data, error } = await supabase.from("clients").delete().eq("id", id).select();
+      
+      if (error) throw new Error(error.message || "Failed to delete client.");
+      if (!data || data.length === 0) {
+         throw new Error("Client not found or you lack permissions to delete it.");
+      }
       return true;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["clients", variables.workspace_id] });
       queryClient.invalidateQueries({ queryKey: ["clients_active", variables.workspace_id] });
     },
+  });
+}
+
+// --------------------------------------------------------
+// CLIENT SOCIAL LOGINS (quick-login to a client's handles)
+// --------------------------------------------------------
+
+export type ClientSocial = {
+  id: string;
+  workspace_id: string;
+  client_id: string;
+  platform: string;
+  handle: string | null;
+  profile_url: string | null;
+  login_url: string | null;
+  username: string | null;
+  secret: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export function useClientSocials(clientId: string | undefined) {
+  return useQuery({
+    queryKey: ["client_socials", clientId],
+    enabled: !!clientId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("client_socials")
+        .select("*")
+        .eq("client_id", clientId!)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data as ClientSocial[];
+    },
+  });
+}
+
+export function useAddClientSocial() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (row: Partial<ClientSocial> & { workspace_id: string; client_id: string; platform: string }) => {
+      const { data, error } = await supabase.from("client_socials").insert(row).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, v) => queryClient.invalidateQueries({ queryKey: ["client_socials", v.client_id] }),
+  });
+}
+
+export function useDeleteClientSocial() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; client_id: string }) => {
+      const { error } = await supabase.from("client_socials").delete().eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: (_, v) => queryClient.invalidateQueries({ queryKey: ["client_socials", v.client_id] }),
   });
 }
 

@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import {
   useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember,
-  useUpdateProfile, WorkspaceMember, usePosts,
+  useUpdateProfile, WorkspaceMember, usePosts, useUpdateAgencyRole
 } from "@/lib/queries";
 import { sendInvite, createAccount } from "@/server/invite";
 import React, { useState, useMemo } from "react";
@@ -77,14 +77,18 @@ function TeamPage() {
   const [createName, setCreateName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [inviteRole, setInviteRole] = useState<"employee" | "client" | "admin">("employee");
+  const [inviteRole, setInviteRole] = useState<"client" | "Social Media Manager" | "Designer" | "Video Editor">("Social Media Manager");
   const [isSending, setIsSending] = useState(false);
   const [selectedMember, setSelectedMember] = useState<WorkspaceMember | null>(null);
 
   const isAdmin = workspace?.role === "admin";
 
-  const employees = members.filter((m) => m.role === "employee" || m.role === "admin");
-  const clients = members.filter((m) => m.role === "client");
+  const admins = members.filter((m) => m.role === "admin");
+  const employees = members.filter((m) => m.role === "employee");
+  
+  const managers = employees.filter(m => (m.agency_role || "Social Media Manager") === "Social Media Manager");
+  const designers = employees.filter(m => m.agency_role === "Designer");
+  const editors = employees.filter(m => m.agency_role === "Video Editor");
 
   // ── Team-wide metrics ──
   const teamMetrics = useMemo(() => {
@@ -117,15 +121,18 @@ function TeamPage() {
     e.preventDefault();
     if (!workspace?.workspaceId) return;
     setIsSending(true);
+
+    const role = inviteRole === "client" ? "client" : "employee";
+    const agencyRole = inviteRole === "client" ? undefined : inviteRole;
     try {
       if (inviteMethod === "link") {
         await sendInvite({
-          data: { email: inviteEmail, role: inviteRole, workspaceId: workspace.workspaceId },
+          data: { email: inviteEmail, role, agencyRole, workspaceId: workspace.workspaceId },
         });
         toast.success(`Invite sent to ${inviteEmail}!`);
       } else {
         await createAccount({
-          data: { name: createName, email: inviteEmail, password: createPassword, role: inviteRole, workspaceId: workspace.workspaceId },
+          data: { name: createName, email: inviteEmail, password: createPassword, role, agencyRole, workspaceId: workspace.workspaceId },
         });
         toast.success(`Account created for ${inviteEmail}!`);
       }
@@ -133,7 +140,7 @@ function TeamPage() {
       setInviteEmail("");
       setCreateName("");
       setCreatePassword("");
-      setInviteRole("employee");
+      setInviteRole("Social Media Manager");
     } catch (err: any) {
       toast.error(inviteMethod === "link" ? "Failed to send invite: " : "Failed to create account: " + (err.message || "Unknown error"));
     } finally {
@@ -197,12 +204,14 @@ function TeamPage() {
                 <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as any)}>
                   <SelectTrigger id="invite-role"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="employee">Employee</SelectItem>
                     <SelectItem value="client">Client</SelectItem>
+                    <SelectItem value="Social Media Manager">Employee: Social Media Manager</SelectItem>
+                    <SelectItem value="Designer">Employee: Designer</SelectItem>
+                    <SelectItem value="Video Editor">Employee: Video Editor</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {inviteRole === "client" ? "Clients can view and approve content on the calendar." : "Employees can create and manage content."}
+                  {inviteRole === "client" ? "Clients can view and approve content on the calendar." : `Employees (${inviteRole}) can create and manage content based on their role.`}
                 </p>
               </div>
 
@@ -253,21 +262,43 @@ function TeamPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {employees.length > 0 && (
+                {admins.length > 0 && (
                   <div>
-                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Agency Team ({employees.length})</h2>
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Admins ({admins.length})</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {employees.map((m) => (
+                      {admins.map((m) => (
                         <MemberCard key={m.id} member={m} onViewProfile={() => setSelectedMember(m)} />
                       ))}
                     </div>
                   </div>
                 )}
-                {clients.length > 0 && (
+                {managers.length > 0 && (
                   <div>
-                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Clients ({clients.length})</h2>
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Social Media Managers ({managers.length})</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {clients.map((m) => <MemberCard key={m.id} member={m} onViewProfile={() => setSelectedMember(m)} />)}
+                      {managers.map((m) => (
+                        <MemberCard key={m.id} member={m} onViewProfile={() => setSelectedMember(m)} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {designers.length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Designers ({designers.length})</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {designers.map((m) => (
+                        <MemberCard key={m.id} member={m} onViewProfile={() => setSelectedMember(m)} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {editors.length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Video Editors ({editors.length})</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {editors.map((m) => (
+                        <MemberCard key={m.id} member={m} onViewProfile={() => setSelectedMember(m)} />
+                      ))}
                     </div>
                   </div>
                 )}
@@ -561,6 +592,22 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
   const { data: workspace } = useCurrentWorkspace();
   const isAdmin = workspace?.role === "admin";
   const removeMember = useRemoveWorkspaceMember();
+  const updateAgencyRole = useUpdateAgencyRole();
+  const currentAgencyRole = member.agency_role || "Social Media Manager";
+
+  const handleRoleChange = async (newRole: string) => {
+    if (!workspace?.workspaceId) return;
+    try {
+      await updateAgencyRole.mutateAsync({
+        workspace_id: workspace.workspaceId,
+        user_id: member.user_id,
+        agency_role: newRole
+      });
+      toast.success("Role updated!");
+    } catch (err: any) {
+      toast.error("Failed to update role: " + err.message);
+    }
+  };
 
   const handleRemove = async () => {
     if (!workspace?.workspaceId) return;
@@ -627,9 +674,22 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
           </div>
           <div className="min-w-0">
             <div className="font-semibold truncate hover:text-primary transition-colors">{name ?? email.split("@")[0]}</div>
-            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full mt-0.5 ${roleStyle.bg} ${roleStyle.text}`}>
-              {ROLE_ICON[member.role]}{roleStyle.label}
-            </span>
+            {isAdmin && member.role === "employee" ? (
+              <Select value={currentAgencyRole} onValueChange={handleRoleChange}>
+                <SelectTrigger className="h-6 text-[10px] mt-1 bg-muted/50 border-0 px-2 py-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Social Media Manager">Social Media Manager</SelectItem>
+                  <SelectItem value="Designer">Designer</SelectItem>
+                  <SelectItem value="Video Editor">Video Editor</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full mt-0.5 ${roleStyle.bg} ${roleStyle.text}`}>
+                {ROLE_ICON[member.role]}{member.role === "employee" ? currentAgencyRole : roleStyle.label}
+              </span>
+            )}
           </div>
         </button>
         {isAdmin && (

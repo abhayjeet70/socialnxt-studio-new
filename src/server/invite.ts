@@ -5,6 +5,7 @@ import { z } from "zod";
 const inviteSchema = z.object({
   email: z.string().email(),
   role: z.enum(["employee", "client", "admin"]),
+  agencyRole: z.string().optional(),
   workspaceId: z.string().uuid(),
 });
 
@@ -13,6 +14,7 @@ const createAccountSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6, "Password must be at least 6 characters"),
   role: z.enum(["employee", "client", "admin"]),
+  agencyRole: z.string().optional(),
   workspaceId: z.string().uuid(),
 });
 
@@ -34,6 +36,7 @@ export const sendInvite = createServerFn({ method: "POST" })
       data: {
         invited_workspace_id: data.workspaceId,
         invited_role: data.role,
+        invited_agency_role: data.agencyRole || null,
       },
       redirectTo: "http://localhost:3000/login",
     });
@@ -54,6 +57,7 @@ export const sendInvite = createServerFn({ method: "POST" })
               workspace_id: data.workspaceId,
               user_id: existingUser.id,
               role: data.role,
+              agency_role: data.agencyRole || null,
             });
             
           if (insertError) {
@@ -107,6 +111,7 @@ export const createAccount = createServerFn({ method: "POST" })
           workspace_id: data.workspaceId,
           user_id: newUser.user.id,
           role: data.role,
+          agency_role: data.agencyRole || null,
         });
 
       if (insertError) {

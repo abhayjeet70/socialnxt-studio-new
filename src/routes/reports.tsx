@@ -16,7 +16,6 @@ import {
 import { PLATFORM_COLOR } from "@/lib/demo-data";
 import {
   useCurrentWorkspace, usePosts, useClients, useWorkspaceMembers,
-  useRevenueGraph, useDeals,
 } from "@/lib/queries";
 
 export const Route = createFileRoute("/reports")({
@@ -35,10 +34,7 @@ function ReportsPage() {
   const { data: posts = [], isLoading: postsLoading } = usePosts(workspace?.workspaceId);
   const { data: clients = [], isLoading: clientsLoading } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: membersLoading } = useWorkspaceMembers(workspace?.workspaceId);
-  const { data: revenueData = [], isLoading: revenueLoading } = useRevenueGraph(workspace?.workspaceId);
-  const { data: deals = [] } = useDeals(workspace?.workspaceId);
-
-  const isLoading = postsLoading || clientsLoading || membersLoading || revenueLoading;
+  const isLoading = postsLoading || clientsLoading || membersLoading;
 
   // ─── Compute effective date window ────────────────────────────────────────────
   const now = new Date();
@@ -76,7 +72,6 @@ function ReportsPage() {
 
   // ─── Filtered datasets ────────────────────────────────────────────────────────
   const filteredPosts = posts.filter(p => inWindow(p.scheduled_for) || inWindow(p.created_at));
-  const filteredDeals = deals.filter(d => inWindow(d.created_at));
 
 
   // ─── Platform Distribution ───────────────────────────────────────────────────
@@ -127,14 +122,11 @@ function ReportsPage() {
     })
     .sort((a, b) => b.assigned - a.assigned);
 
-  // ─── Top Clients by Revenue ──────────────────────────────────────────────────
+  // ─── Top Clients ──────────────────────────────────────────────────────────
   const clientRevenue = clients.map((c) => {
-    const rev = filteredDeals
-      .filter((d) => d.client_name === c.name && d.stage === "Completed")
-      .reduce((sum, d) => sum + (d.amount || 0), 0);
     const activePosts = filteredPosts.filter((p) => p.client_name === c.name && (p.status === "scheduled" || p.status === "approved")).length;
-    return { ...c, revenue: rev, activePosts };
-  }).sort((a, b) => b.revenue - a.revenue);
+    return { ...c, activePosts };
+  }).sort((a, b) => b.activePosts - a.activePosts);
 
   if (isLoading) {
     return (
@@ -258,26 +250,6 @@ function ReportsPage() {
     >
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
 
-        {/* Revenue Bar Chart */}
-        <div className="card-soft p-5 xl:col-span-2">
-          <div className="text-sm font-semibold mb-1">Revenue</div>
-          <div className="text-xs text-muted-foreground mb-4">Monthly recognized revenue (₹ thousands)</div>
-          {revenueData.length === 0 ? (
-            <div className="h-72 flex items-center justify-center text-xs text-muted-foreground">No completed deals yet — approve proposals to see revenue.</div>
-          ) : (
-            <div className="h-48 sm:h-72">
-              <ResponsiveContainer>
-                <BarChart data={revenueData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" />
-                  <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 12 }} formatter={(v) => [`₹${v}k`, "Revenue"]} />
-                  <Bar dataKey="revenue" fill="#2563EB" radius={[10, 10, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
 
         {/* Platform Distribution Pie */}
         <div className="card-soft p-5">
@@ -371,7 +343,6 @@ function ReportsPage() {
                     <th className="px-3 py-2 font-semibold">Industry</th>
                     <th className="px-3 py-2 font-semibold">Active posts</th>
                     <th className="px-3 py-2 font-semibold">Total Posts</th>
-                    <th className="px-3 py-2 font-semibold">Revenue (deals)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -389,9 +360,6 @@ function ReportsPage() {
                         <td className="px-3 py-3 text-foreground/80">{c.industry || "—"}</td>
                         <td className="px-3 py-3 text-foreground/80">{c.activePosts}</td>
                         <td className="px-3 py-3 text-foreground/80">{totalPosts}</td>
-                        <td className="px-3 py-3 font-semibold">
-                          {c.revenue > 0 ? `₹${c.revenue.toLocaleString("en-IN")}` : "—"}
-                        </td>
                       </tr>
                     );
                   })}
