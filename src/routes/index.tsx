@@ -43,7 +43,6 @@ function Dashboard() {
   const { data: workspace, isLoading: workspaceLoading } = useCurrentWorkspace();
   const navigate = useNavigate();
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
-  const stats = useDashboardStats(workspace?.workspaceId);
   const { data: allPostsRaw = [] } = usePosts(workspace?.workspaceId);
   const { data: clientsRaw = [] } = useClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
@@ -64,11 +63,16 @@ function Dashboard() {
     ? accessibleClients.filter((c) => c.name.toLowerCase() === clientName.toLowerCase())
     : accessibleClients;
 
+  const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
+  const isDesignerOrEditor = workspace?.role === "employee" && (workspace?.agencyRole === "Designer" || workspace?.agencyRole === "Video Editor");
+
   const accessiblePosts = isEmployee
     ? allPostsRaw.filter(p => {
-        const clientMatch = accessibleClients.some(c => c.name.toLowerCase() === p.client_name?.toLowerCase());
-        const assignedMatch = p.assigned_to && p.assigned_to.includes(myUserId!);
-        return clientMatch || assignedMatch;
+        if (isDesignerOrEditor) {
+          return p.assigned_to && p.assigned_to.includes(myUserId!);
+        }
+        // For SMMs and others, strict client assignment is required
+        return accessibleClients.some(c => c.name.toLowerCase() === p.client_name?.toLowerCase());
       })
     : allPostsRaw;
 
@@ -83,6 +87,17 @@ function Dashboard() {
   const deals = isClient
     ? dealsRaw.filter(d => d.client_name?.toLowerCase() === clientName.toLowerCase())
     : dealsRaw;
+
+  const stats = {
+    connectedAccounts: isEmployee || isClient 
+      ? accounts.filter(a => clients.some(c => c.id === a.client_id)).length 
+      : accounts.length,
+    totalPosts: allPosts.length,
+    scheduledPosts: allPosts.filter(p => p.status === "scheduled").length,
+    publishedPosts: allPosts.filter(p => p.status === "published").length,
+    draftPosts: allPosts.filter(p => p.status === "draft").length,
+    pendingApprovals: allPosts.filter(p => p.status === "pending_approval").length,
+  };
 
   const [chartMetric, setChartMetric] = useState<"Revenue" | "Clients Onboarded" | "Tasks Created">(isEmployee ? "Tasks Created" : "Revenue");
   const [timeRange, setTimeRange] = useState<"Today" | "Last 7 Days" | "Last 30 Days" | "All Time">("Last 7 Days");
@@ -242,42 +257,42 @@ function Dashboard() {
   const LIVE_STATS = [
     {
       label: "Connected Accounts",
-      value: workspaceLoading ? "…" : String(stats.connectedAccounts),
+      value: workspaceLoading ? "…" : (stats?.connectedAccounts ?? 0).toString(),
       delta: "Social platforms",
       icon: Users,
       tone: "text-primary bg-primary/10",
     },
     {
       label: "Total Posts",
-      value: workspaceLoading ? "…" : String(stats.totalPosts),
+      value: workspaceLoading ? "…" : (stats?.totalPosts ?? 0).toString(),
       delta: "All time",
       icon: Briefcase,
       tone: "text-[#10B981] bg-[#10B981]/10",
     },
     {
       label: "Scheduled",
-      value: workspaceLoading ? "…" : String(stats.scheduledPosts),
+      value: workspaceLoading ? "…" : (stats?.scheduledPosts ?? 0).toString(),
       delta: "Upcoming",
       icon: CalendarClock,
       tone: "text-[#F59E0B] bg-[#F59E0B]/10",
     },
     {
       label: "Posts Published",
-      value: workspaceLoading ? "…" : String(stats.publishedPosts),
+      value: workspaceLoading ? "…" : (stats?.publishedPosts ?? 0).toString(),
       delta: "Live",
       icon: Send,
       tone: "text-[#EC4899] bg-[#EC4899]/10",
     },
     {
       label: "Drafts",
-      value: workspaceLoading ? "…" : String(stats.draftPosts),
+      value: workspaceLoading ? "…" : (stats?.draftPosts ?? 0).toString(),
       delta: "In progress",
       icon: IndianRupee,
       tone: "text-[#8B5CF6] bg-[#8B5CF6]/10",
     },
     {
       label: "Pending Approvals",
-      value: workspaceLoading ? "…" : String(stats.pendingApprovals),
+      value: workspaceLoading ? "…" : (stats?.pendingApprovals ?? 0).toString(),
       delta: "Needs review",
       icon: CheckCircle2,
       tone: "text-[#EF4444] bg-[#EF4444]/10",
@@ -417,7 +432,9 @@ function Dashboard() {
           </div>
           <div className="h-72 w-full mt-4">
             {timelineData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">No data available yet</div>
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground text-center px-4">
+                No performance data found for the selected time range.
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={timelineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -563,7 +580,7 @@ function Dashboard() {
               const isCollab = Array.isArray(t.assigned_to) && t.assigned_to.length > 1;
               const assignedMember = members.find((m) => Array.isArray(t.assigned_to) ? t.assigned_to.includes(m.user_id) : m.user_id === (t.assigned_to as any));
               const baseName = assignedMember?.users?.full_name || assignedMember?.users?.email?.split("@")[0] || "Unassigned";
-              const roleName = assignedMember?.role === "admin" ? "Admin" : (assignedMember?.agency_role || "Social Media Manager");
+              const roleName = (assignedMember?.role === "admin" || assignedMember?.role === "owner") ? "Admin" : (assignedMember?.agency_role || "Social Media Manager");
               const assigneeName = isCollab ? "Collab" : (baseName !== "Unassigned" ? `${baseName} (${roleName})` : "Unassigned");
               return (
                 <div key={t.id} className="flex items-start gap-3">
@@ -644,14 +661,20 @@ function Dashboard() {
 
       <Dialog open={!!selectedMetric} onOpenChange={(open) => !open && setSelectedMetric(null)}>
         <DialogContent className="max-h-[80vh] overflow-y-auto">
-          <DialogHeader className="flex flex-row items-start justify-between pr-8">
-            <div>
-              <DialogTitle>{selectedMetric}</DialogTitle>
-              <DialogDescription>Details for {selectedMetric?.toLowerCase()}</DialogDescription>
+          <DialogHeader className="flex flex-col gap-2">
+            <div className="flex flex-row items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <DialogTitle>{selectedMetric}</DialogTitle>
+                <DialogDescription className="break-words">
+                  {selectedMetric === "Scheduled" 
+                    ? "Details for scheduled posts" 
+                    : `Details for ${selectedMetric?.toLowerCase()}`}
+                </DialogDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleExportMetric} className="h-8 shrink-0">
+                <Download className="h-3.5 w-3.5 mr-2" /> Export
+              </Button>
             </div>
-            <Button variant="outline" size="sm" onClick={handleExportMetric} className="h-8">
-              <Download className="h-3.5 w-3.5 mr-2" /> Export
-            </Button>
           </DialogHeader>
           <div className="mt-4 flex flex-col gap-2">
             {getModalContent()}

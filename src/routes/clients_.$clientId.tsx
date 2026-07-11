@@ -368,21 +368,25 @@ function ClientDetailPage() {
               <div className="text-xl font-bold">{clientTasks.length}</div>
               <div className="text-xs text-muted-foreground">Tasks</div>
             </div>
-            <div className="card-soft p-3">
-              <IndianRupee className="h-4 w-4 text-emerald-600 mb-1" />
-              <div className="text-xl font-bold">{totalRevenue.toLocaleString("en-IN")}</div>
-              <div className="text-xs text-muted-foreground">Deal Revenue</div>
-            </div>
-            <div className="card-soft p-3">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground mb-1" />
-              <div className="text-xl font-bold">{advancePaid.toLocaleString("en-IN")}</div>
-              <div className="text-xs text-muted-foreground">Advance</div>
-            </div>
-            <div className="card-soft p-3">
-              <AlertOctagon className="h-4 w-4 text-rose-500 mb-1" />
-              <div className="text-xl font-bold">{pendingPayment.toLocaleString("en-IN")}</div>
-              <div className="text-xs text-muted-foreground">Pending</div>
-            </div>
+            {workspace?.role !== "employee" && (
+              <>
+                <div className="card-soft p-3">
+                  <IndianRupee className="h-4 w-4 text-emerald-600 mb-1" />
+                  <div className="text-xl font-bold">{totalRevenue.toLocaleString("en-IN")}</div>
+                  <div className="text-xs text-muted-foreground">Deal Revenue</div>
+                </div>
+                <div className="card-soft p-3">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground mb-1" />
+                  <div className="text-xl font-bold">{advancePaid.toLocaleString("en-IN")}</div>
+                  <div className="text-xs text-muted-foreground">Advance</div>
+                </div>
+                <div className="card-soft p-3 border-rose-100">
+                  <AlertOctagon className="h-4 w-4 text-rose-500 mb-1" />
+                  <div className="text-xl font-bold">{pendingPayment.toLocaleString("en-IN")}</div>
+                  <div className="text-xs text-muted-foreground">Pending</div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -453,65 +457,69 @@ function ClientDetailPage() {
           </Section>
 
           {/* Revenue Records */}
-          <Section icon={IndianRupee} title="Revenue Records" count={clientDeals.length}>
-            <div className="divide-y divide-border">
-              {clientDeals.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No revenue logged yet.</div>}
-              {clientDeals.map((d) => (
-                <div key={d.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{d.project_name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{new Date(d.created_at).toLocaleDateString()}</div>
-                  </div>
-                  <div className="text-right mr-4">
-                    <div className="text-sm font-bold text-emerald-600">₹{(d.amount || 0).toLocaleString("en-IN")}</div>
-                    <div className="text-[10px] text-muted-foreground">Adv: ₹{(d.advance_paid || 0).toLocaleString("en-IN")}</div>
-                  </div>
-                  {isStaff && (
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => openDeal(d)}><Pencil className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this record?")) deleteDeal.mutate({id: d.id}); }}><Trash2 className="h-4 w-4" /></Button>
+          {workspace?.role !== "employee" && (
+            <Section icon={IndianRupee} title="Revenue Records" count={clientDeals.length}>
+              <div className="divide-y divide-border">
+                {clientDeals.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No revenue logged yet.</div>}
+                {clientDeals.map((d) => (
+                  <div key={d.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{d.project_name}</div>
+                      <div className="text-xs text-muted-foreground truncate">{new Date(d.created_at).toLocaleDateString()}</div>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {isStaff && (
-              <div className="px-4 py-3 border-t border-border">
-                <Button variant="outline" size="sm" className="rounded-lg" onClick={() => openDeal()}><Plus className="h-4 w-4 mr-1" /> Log Revenue</Button>
+                    <div className="text-right mr-4">
+                      <div className="text-sm font-bold text-emerald-600">₹{(d.amount || 0).toLocaleString("en-IN")}</div>
+                      <div className="text-[10px] text-muted-foreground">Adv: ₹{(d.advance_paid || 0).toLocaleString("en-IN")}</div>
+                    </div>
+                    {isStaff && (
+                      <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => openDeal(d)}><Pencil className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this record?")) deleteDeal.mutate({id: d.id}); }}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
-          </Section>
+              {isStaff && (
+                <div className="px-4 py-3 border-t border-border">
+                  <Button variant="outline" size="sm" className="rounded-lg" onClick={() => openDeal()}><Plus className="h-4 w-4 mr-1" /> Log Revenue</Button>
+                </div>
+              )}
+            </Section>
+          )}
 
           {/* Invoices */}
-          <Section icon={Receipt} title="Invoices" count={clientInvoices.length}>
-            <div className="divide-y divide-border">
-              {clientInvoices.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No invoices generated yet.</div>}
-              {clientInvoices.map((inv) => (
-                <div key={inv.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{inv.quotation_number}</div>
-                    <div className="text-xs text-muted-foreground truncate">{new Date(inv.created_at).toLocaleDateString()}</div>
-                  </div>
-                  <Badge className="rounded-full border-0 bg-muted text-foreground/70">{inv.status}</Badge>
-                  <div className="text-right mr-2">
-                    <div className="text-sm font-bold text-emerald-600">₹{(inv.line_items.reduce((s: number, i: any) => s + (i.qty * i.unit_price), 0) * (1 + inv.tax_rate/100)).toLocaleString("en-IN", {maximumFractionDigits: 0})}</div>
-                  </div>
-                  {isStaff && (
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => { setEditingInvoice(inv); setInvoiceForm(inv); setInvoiceOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:bg-muted" onClick={() => setPreviewInvoice(inv)}><FileText className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this invoice?")) deleteQuotation.mutate({ id: inv.id }); }}><Trash2 className="h-4 w-4" /></Button>
+          {workspace?.role !== "employee" && (
+            <Section icon={Receipt} title="Invoices" count={clientInvoices.length}>
+              <div className="divide-y divide-border">
+                {clientInvoices.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No invoices generated yet.</div>}
+                {clientInvoices.map((inv) => (
+                  <div key={inv.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{inv.quotation_number}</div>
+                      <div className="text-xs text-muted-foreground truncate">{new Date(inv.created_at).toLocaleDateString()}</div>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {isStaff && (
-              <div className="px-4 py-3 border-t border-border">
-                <Button variant="outline" size="sm" className="rounded-lg" onClick={handleGenerateInvoice}><Plus className="h-4 w-4 mr-1" /> Generate Invoice from Tasks</Button>
+                    <Badge className="rounded-full border-0 bg-muted text-foreground/70">{inv.status}</Badge>
+                    <div className="text-right mr-2">
+                      <div className="text-sm font-bold text-emerald-600">₹{(inv.line_items.reduce((s: number, i: any) => s + (i.qty * i.unit_price), 0) * (1 + inv.tax_rate/100)).toLocaleString("en-IN", {maximumFractionDigits: 0})}</div>
+                    </div>
+                    {isStaff && (
+                      <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => { setEditingInvoice(inv); setInvoiceForm(inv); setInvoiceOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:bg-muted" onClick={() => setPreviewInvoice(inv)}><FileText className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this invoice?")) deleteQuotation.mutate({ id: inv.id }); }}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
-          </Section>
+              {isStaff && (
+                <div className="px-4 py-3 border-t border-border">
+                  <Button variant="outline" size="sm" className="rounded-lg" onClick={handleGenerateInvoice}><Plus className="h-4 w-4 mr-1" /> Generate Invoice from Tasks</Button>
+                </div>
+              )}
+            </Section>
+          )}
 
           {/* Issues */}
           <Section icon={AlertOctagon} title="Client Issues" count={clientIssues.length}>
@@ -617,11 +625,11 @@ function ClientDetailPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Total Revenue (₹)</Label>
-                <Input type="number" value={dealAmount} onChange={e => setDealAmount(Number(e.target.value) || 0)} required />
+                <Input type="number" value={dealAmount || ""} onChange={e => setDealAmount(Number(e.target.value) || 0)} required />
               </div>
               <div className="space-y-2">
                 <Label>Advance Paid (₹)</Label>
-                <Input type="number" value={dealAdvance} onChange={e => setDealAdvance(Number(e.target.value) || 0)} />
+                <Input type="number" value={dealAdvance || ""} onChange={e => setDealAdvance(Number(e.target.value) || 0)} />
               </div>
             </div>
             <div className="flex gap-2 pt-4">

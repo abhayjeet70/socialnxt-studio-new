@@ -29,7 +29,9 @@ const BG_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#3b82f6", "#14b8
 const DEFAULT_PERMISSIONS = [
   { label: "View all clients", key: "view_clients", roles: { admin: true, employee: true, client: false } },
   { label: "Edit content calendar", key: "edit_calendar", roles: { admin: true, employee: true, client: false } },
+  { label: "Access Proposals", key: "access_proposals", roles: { admin: true, employee: false, client: false } },
   { label: "Approve proposals", key: "approve_proposals", roles: { admin: true, employee: false, client: false } },
+  { label: "Access Quotations", key: "access_quotations", roles: { admin: true, employee: false, client: false } },
   { label: "Manage employees", key: "manage_employees", roles: { admin: true, employee: false, client: false } },
   { label: "Export reports", key: "export_reports", roles: { admin: true, employee: false, client: false } },
   { label: "View reports", key: "view_reports", roles: { admin: true, employee: true, client: false } },

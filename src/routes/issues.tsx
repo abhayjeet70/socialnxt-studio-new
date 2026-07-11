@@ -60,8 +60,17 @@ function IssuesPage() {
   const deleteIssue = useDeleteIssue();
 
   const isClient = workspace?.role === "client";
+  const isEmployee = workspace?.role === "employee";
   const { data: clientsList = [] } = useClients(workspace?.workspaceId);
-  const activeClients = clientsList.filter(c => c.status !== "Closed");
+  
+  const activeClients = clientsList.filter(c => {
+    if (c.status === "Closed") return false;
+    if (isEmployee) {
+      return Object.values(c.team_assignments || {}).includes(workspace.userId);
+    }
+    return true;
+  });
+  
   const closedNames = new Set(clientsList.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
   const closedEmails = new Set(clientsList.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
 
@@ -78,7 +87,19 @@ function IssuesPage() {
   const issues = allIssues.filter((i) => {
     if (isClient && i.raised_by !== workspace?.userId) return false;
     if (filterPriority !== "all" && i.priority !== filterPriority) return false;
-    if (!isClient && filterClient !== "all" && i.client_id !== filterClient && i.raised_by !== filterClient) return false;
+    
+    // Restrict employees to only see issues for their assigned clients
+    if (isEmployee) {
+      const isAssigned = activeClients.some(c => c.name === i.client_name);
+      // Allow if it's not linked to any client (e.g. general workspace issue) or if it's assigned
+      if (i.client_name && !isAssigned) return false;
+    }
+
+    if (!isClient && filterClient !== "all") {
+      const selectedClientName = resolveClientName(filterClient);
+      const matchesClient = i.raised_by === filterClient || (selectedClientName && i.client_name === selectedClientName) || i.client_id === filterClient;
+      if (!matchesClient) return false;
+    }
     return true;
   });
 
@@ -104,7 +125,7 @@ function IssuesPage() {
           issue_type: issueType as Issue["issue_type"],
           priority: priority as Issue["priority"],
           client_name: clientName,
-          ...(clientId !== "none" && { client_id: clientId }),
+          ...(clientId.startsWith("user_") && { client_id: clientId.replace("user_", "") }),
         });
         toast.success("Issue updated successfully!");
       } else {
@@ -117,7 +138,7 @@ function IssuesPage() {
           priority: priority as Issue["priority"],
           status: "Open",
           client_name: clientName,
-          ...(clientId !== "none" && { client_id: clientId }),
+          ...(clientId.startsWith("user_") && { client_id: clientId.replace("user_", "") }),
         });
         toast.success("Issue raised successfully!");
       }
@@ -129,7 +150,11 @@ function IssuesPage() {
       setPriority("Medium");
       setClientId("none");
     } catch (err: any) {
-      toast.error(`Failed to ${editingIssue ? 'update' : 'raise'} issue: ` + err.message);
+      console.error("Failed to save issue:", err);
+      const msg = err.message || JSON.stringify(err) || "Unknown error occurred";
+      toast.error(`Failed to ${editingIssue ? 'update' : 'raise'} issue: ` + msg);
+      // Fallback alert in case toast is hidden behind dialog
+      alert(`Error saving issue: ${msg}\n\nThis is usually caused by a missing database column or foreign key constraint. Please ensure all migrations are applied.`);
     }
   };
 

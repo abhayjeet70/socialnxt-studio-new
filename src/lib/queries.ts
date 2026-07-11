@@ -283,6 +283,7 @@ export type MediaAsset = {
   tags: string[] | null;
   client_id: string | null;
   created_at: string;
+  clients?: { id: string; name: string } | null;
 };
 
 export function useMediaAssets(workspaceId: string | undefined) {
@@ -322,6 +323,20 @@ export function useDeleteMediaAsset() {
       const { error } = await supabase.from("media_assets").delete().eq("id", id);
       if (error) throw error;
       return true;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["media_assets", variables.workspace_id] });
+    },
+  });
+}
+
+export function useUpdateMediaAsset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates, workspace_id }: { id: string; updates: Partial<MediaAsset>; workspace_id: string }) => {
+      const { data, error } = await supabase.from("media_assets").update(updates).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["media_assets", variables.workspace_id] });
@@ -441,6 +456,20 @@ export function useCreateMeeting() {
   return useMutation({
     mutationFn: async (meeting: Partial<Meeting> & { workspace_id: string; created_by: string }) => {
       const { data, error } = await supabase.from("meetings").insert(meeting).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["meetings", variables.workspace_id] });
+    },
+  });
+}
+
+export function useUpdateMeeting() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates, workspace_id }: { id: string; updates: Partial<Meeting>; workspace_id: string }) => {
+      const { data, error } = await supabase.from("meetings").update(updates).eq("id", id).select().single();
       if (error) throw error;
       return data;
     },

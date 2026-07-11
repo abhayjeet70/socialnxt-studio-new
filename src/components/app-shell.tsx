@@ -5,7 +5,7 @@ import {
   Search, Bell, ChevronDown, LogOut, Menu, X, Activity, Archive, Receipt, Images,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -61,15 +61,32 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
   pathname: string;
   onNavClick?: () => void;
 }) {
+  const [perms, setPerms] = useState<any>({});
+  
+  useEffect(() => {
+    if (workspace?.workspaceId) {
+      try {
+        const stored = localStorage.getItem(`perms_${workspace.workspaceId}`);
+        if (stored) setPerms(JSON.parse(stored));
+      } catch {}
+    }
+  }, [workspace?.workspaceId]);
+
+  const hasPerm = (key: string, role: string, defaultVal: boolean) => {
+    return perms[key]?.[role] ?? defaultVal;
+  };
+
   const visibleNav = NAV.filter(item => {
-    if (workspace?.role === "client") {
-      return ["/", "/calendar", "/tasks", "/meetings", "/issues", "/activity-logs", "/proposals", "/quotations"].includes(item.to);
+    const role = workspace?.role || "employee";
+    
+    if (item.to === "/proposals") return hasPerm("access_proposals", role, role === "admin");
+    if (item.to === "/quotations") return hasPerm("access_quotations", role, role === "admin");
+
+    if (role === "client") {
+      return ["/", "/calendar", "/tasks", "/media", "/meetings", "/issues", "/activity-logs", "/proposals", "/quotations"].includes(item.to);
     }
-    if (workspace?.role === "employee") {
+    if (role === "employee") {
       return !["/team", "/deals", "/proposals", "/quotations"].includes(item.to);
-    }
-    if (workspace?.role === "admin" && item.to === "/media") {
-      return false;
     }
     return true;
   });
@@ -415,7 +432,9 @@ export function AppShell({ children, title, subtitle, actions }: {
                     </div>
                     <div className="hidden md:block text-left leading-tight">
                       <div className="text-xs font-semibold">{workspace?.userFullName || "User"}</div>
-                      <div className="text-[11px] text-muted-foreground capitalize">{workspace?.role || "Member"}</div>
+                      <div className="text-[11px] text-muted-foreground capitalize">
+                        {workspace?.role === "employee" && workspace?.agencyRole ? workspace.agencyRole : workspace?.role || "Member"}
+                      </div>
                     </div>
                     <ChevronDown className="h-4 w-4 text-muted-foreground hidden md:block" />
                   </div>

@@ -49,7 +49,7 @@ export function AdminTasksView({ workspaceId, userId, isSMM, onClientClick }: { 
             const m = members.find(x => x.user_id === id);
             if (m) {
               const name = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
-              const role = m.role === "admin" ? "Admin" : (m.agency_role || "Social Media Manager");
+              const role = (m.role === "admin" || m.role === "owner") ? "Admin" : (m.agency_role || "Social Media Manager");
               team.push({ name, role, id });
             }
           }

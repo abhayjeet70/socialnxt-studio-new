@@ -67,7 +67,26 @@ function CalendarPage() {
   const isLoading = isLoadingPosts || isLoadingClients || isLoadingMembers;
 
   const isClient = workspace?.role === "client";
+  const isEmployee = workspace?.role === "employee";
   const clientNameForFilter = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
+  const myUserId = workspace?.userId;
+
+  const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
+  const isDesignerOrEditor = workspace?.role === "employee" && (workspace?.agencyRole === "Designer" || workspace?.agencyRole === "Video Editor");
+
+  const accessibleClients = isEmployee
+    ? clients.filter(c => Object.values((c as any).team_assignments || {}).includes(myUserId))
+    : clients;
+
+  const accessiblePosts = isEmployee
+    ? allPosts.filter(p => {
+        if (isDesignerOrEditor) {
+          return p.assigned_to && p.assigned_to.includes(myUserId!);
+        }
+        // For SMMs and others, strict client assignment is required
+        return accessibleClients.some(c => c.name.toLowerCase() === p.client_name?.toLowerCase());
+      })
+    : allPosts;
 
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>("All Clients");
   const [selectedPlatformFilter, setSelectedPlatformFilter] = useState<string>("All Platforms");
@@ -80,7 +99,7 @@ function CalendarPage() {
     const closedNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
     const closedEmails = new Set(clients.filter(c => c.status === "Closed" && c.email).map(c => c.email!.toLowerCase()));
 
-    const fromClientsTable = clients
+    const fromClientsTable = accessibleClients
       .filter(c => c.status !== "Closed")
       .map((c) => ({
         value: c.name,
@@ -107,10 +126,10 @@ function CalendarPage() {
       seen.add(o.value);
       return true;
     });
-  }, [clients, members]);
+  }, [clients, members, accessibleClients]);
 
   // Only show approved/scheduled/published posts on the calendar
-  const approvedPosts = allPosts.filter(
+  const approvedPosts = accessiblePosts.filter(
     (p) => p.status === "approved" || p.status === "scheduled" || p.status === "published"
   );
 
@@ -528,7 +547,7 @@ function CalendarPage() {
                                 const names = assignedMembers.map(
                                   (m: any) => {
                                     const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
-                                    const role = m.role === "admin" ? "Admin" : (m.agency_role || "Social Media Manager");
+                                    const role = (m.role === "admin" || m.role === "owner") ? "Admin" : (m.agency_role || "Social Media Manager");
                                     return `${n} (${role})`;
                                   }
                                 );

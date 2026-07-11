@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AdminTasksView } from "@/components/admin-tasks-view";
 import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers, useBulkCreatePosts } from "@/lib/queries";
@@ -179,40 +179,6 @@ function TasksPage() {
 
   const isLoading = isLoadingPosts || isLoadingClients || isLoadingMembers;
 
-  const handleAddRow = () => {
-    if (!workspace) return;
-    createPost.mutate({
-      workspace_id: workspace.workspaceId,
-      author_id: workspace.userId,
-      status: "draft",
-      scheduled_for: new Date().toISOString(),
-      content: "",
-      topic: "",
-      content_type: "",
-    }, {
-      onSuccess: (data) => {
-        toast.success("Added new row!");
-        if (data && data.id) {
-          setNewlyAddedPostId(data.id);
-          setUndoAction({
-            description: "Add Row",
-            undo: async () => {
-              await supabase.from("posts").delete().eq("id", data.id);
-              queryClient.invalidateQueries({ queryKey: ["posts"] });
-            }
-          });
-        } else {
-          setTimeout(() => {
-            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-          }, 500);
-        }
-      },
-      onError: (err: any) => {
-        console.error("Add Row Error:", err);
-        toast.error("Error adding row: " + (err.message || "Unknown error"));
-      }
-    });
-  };
 
   const isClient = workspace?.role === "client";
   const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
@@ -260,6 +226,43 @@ function TasksPage() {
   const PAGE_SIZE = 25;
   const [customDateFrom, setCustomDateFrom] = useState<string>("");
   const [customDateTo, setCustomDateTo] = useState<string>("");
+
+  const handleAddRow = () => {
+    if (!workspace) return;
+    createPost.mutate({
+      workspace_id: workspace.workspaceId,
+      author_id: workspace.userId,
+      status: "draft",
+      scheduled_for: new Date().toISOString(),
+      content: "",
+      topic: "",
+      content_type: "",
+      client_name: selectedClientFilter !== "All Clients" ? selectedClientFilter : "",
+      platform: selectedPlatformFilter !== "All Platforms" ? selectedPlatformFilter : undefined,
+    }, {
+      onSuccess: (data) => {
+        toast.success("Added new row!");
+        if (data && data.id) {
+          setNewlyAddedPostId(data.id);
+          setUndoAction({
+            description: "Add Row",
+            undo: async () => {
+              await supabase.from("posts").delete().eq("id", data.id);
+              queryClient.invalidateQueries({ queryKey: ["posts"] });
+            }
+          });
+        } else {
+          setTimeout(() => {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          }, 500);
+        }
+      },
+      onError: (err: any) => {
+        console.error("Add Row Error:", err);
+        toast.error("Error adding row: " + (err.message || "Unknown error"));
+      }
+    });
+  };
 
   const sortedPosts = [...posts]
     .filter((p) => {
@@ -496,8 +499,8 @@ function TasksPage() {
             </div>
           )}
           <Button variant="outline" onClick={handleExportCSV} className="rounded-xl h-10 border-input" title="Export as CSV">
-            <Download className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Export</span>
+            <Download className="h-4 w-4 mr-2" />
+            <span>Export CSV</span>
           </Button>
           {!isClient && (
             <>
@@ -815,14 +818,29 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
 
       {/* ASSIGNED TO — multi-select */}
       <td className="p-0 border-r border-gray-200 align-top bg-transparent">
-        <AssignedToCell
-          post={post}
-          members={members}
-          isClient={isClient}
-          isSMM={isSMM}
-          currentUserId={workspace?.userId}
-          onUpdate={(ids) => updatePost.mutate({ id: post.id, updates: { assigned_to: ids } })}
-        />
+        <div className="h-full min-h-[140px] p-2 flex flex-col gap-2 justify-start relative">
+          <RoleSelectAssign
+            post={post}
+            members={members}
+            isClient={isClient}
+            onUpdate={(userIds) => updatePost.mutate({ id: post.id, updates: { assigned_to: userIds } })}
+            targetRole="Social Media Manager"
+          />
+          <RoleSelectAssign
+            post={post}
+            members={members}
+            isClient={isClient}
+            onUpdate={(userIds) => updatePost.mutate({ id: post.id, updates: { assigned_to: userIds } })}
+            targetRole="Designer"
+          />
+          <RoleSelectAssign
+            post={post}
+            members={members}
+            isClient={isClient}
+            onUpdate={(userIds) => updatePost.mutate({ id: post.id, updates: { assigned_to: userIds } })}
+            targetRole="Video Editor"
+          />
+        </div>
       </td>
 
       {/* SCHEDULED TIME */}
@@ -1019,49 +1037,53 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
   );
 }
 
-// ── Multi-select Assigned To cell ──────────────────────────────────────────
-function AssignedToCell({
+// ── Role specific Assigned To dropdown ──────────────────────────────────────
+function RoleSelectAssign({
   post,
   members,
   isClient,
-  isSMM,
-  currentUserId,
   onUpdate,
+  targetRole,
 }: {
   post: Post;
   members: any[];
   isClient?: boolean;
-  isSMM?: boolean;
-  currentUserId?: string;
   onUpdate: (ids: string[]) => void;
+  targetRole: "Social Media Manager" | "Designer" | "Video Editor";
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { data: workspace } = useCurrentWorkspace();
+  const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
+  const currentUserId = workspace?.userId;
+
+  const eligibleMembers = useMemo(() => {
+    let list = members.filter((m) => m.role === "employee" && (m.agency_role || "Social Media Manager") === targetRole);
+    if (isSMM) {
+      list = list.filter(m => 
+        m.agency_role === "Designer" || 
+        m.agency_role === "Video Editor" || 
+        m.user_id === currentUserId
+      );
+    }
+    return list;
+  }, [members, targetRole, isSMM, currentUserId]);
+
+  const roleMemberIds = useMemo(() => new Set(eligibleMembers.map(m => m.user_id)), [eligibleMembers]);
 
   // ── Local state for immediate checkbox feedback ──
-  // post.assigned_to is now a string[] from Supabase text[] column
-  const [selectedIds, setSelectedIds] = useState<string[]>(() => post.assigned_to ?? []);
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => (post.assigned_to ?? []).filter(id => roleMemberIds.has(id)));
 
   // Sync from prop when Supabase refetch arrives
   useEffect(() => {
-    setSelectedIds(post.assigned_to ?? []);
-  }, [post.assigned_to]);
-
-  let eligibleMembers = members.filter((m) => m.role === "employee");
-  
-  if (isSMM) {
-    eligibleMembers = eligibleMembers.filter(m => 
-      m.agency_role === "Designer" || 
-      m.agency_role === "Video Editor" || 
-      m.user_id === currentUserId
-    );
-  }
+    setSelectedIds((post.assigned_to ?? []).filter(id => roleMemberIds.has(id)));
+  }, [post.assigned_to, roleMemberIds]);
 
   const getMemberName = (userId: string) => {
     const m = eligibleMembers.find((m) => m.user_id === userId);
     if (!m) return "Unknown";
     const name = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
-    const roleName = m.role === "admin" ? "Admin" : (m.agency_role || "Social Media Manager");
+    const roleName = (m.role === "admin" || m.role === "owner") ? "Admin" : (m.agency_role || "Social Media Manager");
     return `${name} (${roleName})`;
   };
 
@@ -1069,12 +1091,17 @@ function AssignedToCell({
     name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const toggleMember = (userId: string) => {
-    // Update local state immediately for instant UI feedback
-    const next = selectedIds.includes(userId)
-      ? selectedIds.filter((id) => id !== userId)
+    const isCurrentlySelected = selectedIds.includes(userId);
+    const newSelectedForThisRole = isCurrentlySelected 
+      ? selectedIds.filter(id => id !== userId)
       : [...selectedIds, userId];
-    setSelectedIds(next);
-    onUpdate(next); // persist to Supabase in background
+
+    setSelectedIds(newSelectedForThisRole);
+
+    // Merge this back into the global assigned_to
+    const otherRolesIds = (post.assigned_to ?? []).filter(id => !roleMemberIds.has(id));
+    const merged = [...otherRolesIds, ...newSelectedForThisRole];
+    onUpdate(merged);
   };
 
   // Click outside to close — proper useEffect with cleanup
@@ -1101,7 +1128,7 @@ function AssignedToCell({
           ${isClient ? "opacity-60 cursor-default border-transparent" : "border-transparent hover:border-input hover:bg-white/60 cursor-pointer"}`}
       >
         {selectedIds.length === 0 ? (
-          <span className="text-muted-foreground">Unassigned</span>
+          <span className="text-muted-foreground">Select {targetRole}</span>
         ) : isCollab ? (
           <div className="flex items-center gap-1.5 flex-wrap">
             {/* Stacked avatars */}

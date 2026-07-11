@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Plus, Video, Calendar as CalIcon, Loader2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useCurrentWorkspace, useMeetings, useCreateMeeting, useDeleteMeeting, useWorkspaceMembers, useClients } from "@/lib/queries";
+import { useCurrentWorkspace, useMeetings, useCreateMeeting, useUpdateMeeting, useDeleteMeeting, useWorkspaceMembers, useClients } from "@/lib/queries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,9 +23,11 @@ function MeetingsPage() {
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: clients = [] } = useClients(workspace?.workspaceId);
   const createMeeting = useCreateMeeting();
+  const updateMeeting = useUpdateMeeting();
   const deleteMeeting = useDeleteMeeting();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<any>(null);
   const [agenda, setAgenda] = useState("");
   const [meetLink, setMeetLink] = useState("");
   const [date, setDate] = useState("");
@@ -77,25 +79,41 @@ function MeetingsPage() {
     const scheduled_at = new Date(`${date}T${time}`).toISOString();
 
     try {
-      await createMeeting.mutateAsync({
-        workspace_id: workspace.workspaceId,
-        created_by: workspace.userId,
-        agenda,
-        meet_link: meetLink,
-        scheduled_at,
-        participant_type: participantType,
-        participant_ids: participantIds,
-      } as any);
-      toast.success("Meeting scheduled!");
+      if (editingMeeting) {
+        await updateMeeting.mutateAsync({
+          id: editingMeeting.id,
+          workspace_id: workspace.workspaceId,
+          updates: {
+            agenda,
+            meet_link: meetLink,
+            scheduled_at,
+            participant_type: "custom",
+            participant_ids: participantIds,
+          }
+        });
+        toast.success("Meeting updated!");
+      } else {
+        await createMeeting.mutateAsync({
+          workspace_id: workspace.workspaceId,
+          created_by: workspace.userId,
+          agenda,
+          meet_link: meetLink,
+          scheduled_at,
+          participant_type: "custom",
+          participant_ids: participantIds,
+        } as any);
+        toast.success("Meeting scheduled!");
+      }
+      
       setIsDialogOpen(false);
+      setEditingMeeting(null);
       setAgenda("");
       setMeetLink("");
       setDate("");
       setTime("");
-      setParticipantType("whole_team");
       setParticipantIds([]);
     } catch (err: any) {
-      toast.error("Failed to schedule: " + err.message);
+      toast.error(`Failed to ${editingMeeting ? 'update' : 'schedule'}: ` + err.message);
     }
   };
 
@@ -118,7 +136,15 @@ function MeetingsPage() {
       subtitle="Upcoming syncs and past client conversations."
       actions={
         canCreate && (
-          <Button onClick={() => setIsDialogOpen(true)} className="rounded-xl h-10">
+          <Button onClick={() => {
+            setEditingMeeting(null);
+            setAgenda("");
+            setMeetLink("");
+            setDate("");
+            setTime("");
+            setParticipantIds([]);
+            setIsDialogOpen(true);
+          }} className="rounded-xl h-10">
             <Plus className="h-4 w-4 mr-2" /> Schedule Meeting
           </Button>
         )
@@ -164,16 +190,41 @@ function MeetingsPage() {
                         Join Meeting
                       </Button>
                       {canCreate && (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="rounded-xl h-9 w-9 text-red-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 shrink-0"
-                          onClick={() => handleDelete(m.id)}
-                          disabled={isDeleting}
-                          title="Delete meeting"
-                        >
-                          {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="rounded-xl h-9 w-9 text-muted-foreground hover:bg-muted hover:text-foreground shrink-0"
+                            onClick={() => {
+                              setEditingMeeting(m);
+                              setAgenda(m.agenda);
+                              setMeetLink(m.meet_link || "");
+                              
+                              // Handle date parsing safely in case scheduled_at is invalid
+                              try {
+                                const d = new Date(m.scheduled_at);
+                                setDate(d.toISOString().split("T")[0]);
+                                setTime(d.toTimeString().slice(0, 5));
+                              } catch(e) {}
+                              
+                              setParticipantIds((m as any).participant_ids || []);
+                              setIsDialogOpen(true);
+                            }}
+                            title="Edit meeting"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="rounded-xl h-9 w-9 text-red-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 shrink-0"
+                            onClick={() => handleDelete(m.id)}
+                            disabled={isDeleting}
+                            title="Delete meeting"
+                          >
+                            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -222,11 +273,14 @@ function MeetingsPage() {
         </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open);
+        if (!open) setEditingMeeting(null);
+      }}>
         <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Schedule Meeting</DialogTitle>
-            <DialogDescription>Schedule a client sync, content review, or strategy call.</DialogDescription>
+            <DialogTitle>{editingMeeting ? "Edit Meeting" : "Schedule Meeting"}</DialogTitle>
+            <DialogDescription>{editingMeeting ? "Update the details for this meeting." : "Schedule a client sync, content review, or strategy call."}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateMeeting} className="space-y-4 pt-2">
             <div className="space-y-2">
@@ -247,60 +301,73 @@ function MeetingsPage() {
                 <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Participants</Label>
-              <Select value={participantType} onValueChange={(val) => { setParticipantType(val); setParticipantIds([]); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="whole_team">Whole Team</SelectItem>
-                  <SelectItem value="single_person">Single Person (Team Member)</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="space-y-4 border rounded-xl p-4 bg-muted/10">
+              <div className="flex items-center justify-between">
+                <Label className="font-semibold">Participants</Label>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    const allIds = [
+                      ...teamMembers.map(m => m.user_id), 
+                      ...allAvailableClients.map(c => c.id)
+                    ];
+                    if (participantIds.length === allIds.length) {
+                      setParticipantIds([]); // Deselect all
+                    } else {
+                      setParticipantIds(allIds); // Select all
+                    }
+                  }}
+                  className="h-8 text-xs hover:bg-muted/50"
+                >
+                  {participantIds.length > 0 ? "Toggle All" : "Select All"}
+                </Button>
+              </div>
+
+              {teamMembers.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold block">Team Members</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {teamMembers.map((m) => (
+                      <label key={m.user_id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-2 rounded-lg transition-colors border border-transparent hover:border-border shadow-sm hover:shadow">
+                        <Checkbox
+                          checked={participantIds.includes(m.user_id)}
+                          onCheckedChange={(c) => {
+                            if (c) setParticipantIds([...participantIds, m.user_id]);
+                            else setParticipantIds(participantIds.filter((id) => id !== m.user_id));
+                          }}
+                        />
+                        <span className="truncate text-foreground/90 font-medium">{m.users?.full_name || m.users?.email || m.user_id}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {allAvailableClients.length > 0 && (
+                <div className="space-y-2 pt-3 border-t">
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold block">Clients</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                    {allAvailableClients.map((m) => (
+                      <label key={m.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-2 rounded-lg transition-colors border border-transparent hover:border-border shadow-sm hover:shadow">
+                        <Checkbox
+                          checked={participantIds.includes(m.id)}
+                          onCheckedChange={(c) => {
+                            if (c) setParticipantIds([...participantIds, m.id]);
+                            else setParticipantIds(participantIds.filter((id) => id !== m.id));
+                          }}
+                        />
+                        <span className="truncate text-foreground/90 font-medium">{m.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-
-            {participantType === "single_person" && teamMembers.length > 0 && (
-              <div className="space-y-2 border rounded-xl p-3 bg-muted/20">
-                <Label className="text-xs text-muted-foreground mb-2 block">Select Team Members</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {teamMembers.map((m) => (
-                    <label key={m.user_id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1.5 rounded-lg transition-colors">
-                      <Checkbox
-                        checked={participantIds.includes(m.user_id)}
-                        onCheckedChange={(c) => {
-                          if (c) setParticipantIds([...participantIds, m.user_id]);
-                          else setParticipantIds(participantIds.filter((id) => id !== m.user_id));
-                        }}
-                      />
-                      <span className="truncate">{m.users?.full_name || m.users?.email || m.user_id}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {participantType === "client" && allAvailableClients.length > 0 && (
-              <div className="space-y-2 border rounded-xl p-3 bg-muted/20">
-                <Label className="text-xs text-muted-foreground mb-2 block">Select Clients</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                  {allAvailableClients.map((m) => (
-                    <label key={m.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1.5 rounded-lg transition-colors">
-                      <Checkbox
-                        checked={participantIds.includes(m.id)}
-                        onCheckedChange={(c) => {
-                          if (c) setParticipantIds([...participantIds, m.id]);
-                          else setParticipantIds(participantIds.filter((id) => id !== m.id));
-                        }}
-                      />
-                      <span className="truncate">{m.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-            <Button type="submit" className="w-full" disabled={createMeeting.isPending}>
-              {createMeeting.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Schedule Meeting
+            <Button type="submit" className="w-full h-11 text-base font-semibold" disabled={createMeeting.isPending || updateMeeting.isPending}>
+              {(createMeeting.isPending || updateMeeting.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {editingMeeting ? "Update Meeting" : "Schedule Meeting"}
             </Button>
           </form>
         </DialogContent>

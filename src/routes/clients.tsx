@@ -232,6 +232,7 @@ function ClientsPage() {
 
   const accessibleMembers = isEmployee ? [] : members;
   const filteredMembers = accessibleMembers.filter(m => {
+    if (m.role !== "client") return false;
     if (statusFilter !== "All Statuses" && statusFilter !== "Active") return false;
     const n = m.users?.full_name || m.users?.email?.split("@")[0] || "";
     const matchesSearch = n.toLowerCase().includes(searchTerm.toLowerCase()) ||
