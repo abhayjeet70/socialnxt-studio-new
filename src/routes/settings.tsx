@@ -328,8 +328,9 @@ function SettingsPage() {
                     <tr key={p.key} className="border-t border-border hover:bg-muted/30 transition-colors">
                       <td className="px-3 py-3 font-medium">{p.label}</td>
                       {(["admin", "employee", "client"] as const).map((role) => {
+                        const adminToggleableKeys = ["access_proposals", "approve_proposals", "access_quotations"];
                         const isOn = permMatrix[p.key]?.[role] ?? p.roles[role];
-                        const isLocked = role === "admin";
+                        const isLocked = role === "admin" && !adminToggleableKeys.includes(p.key);
                         return (
                           <td key={role} className="px-3 py-3 text-center">
                             {isAdmin ? (

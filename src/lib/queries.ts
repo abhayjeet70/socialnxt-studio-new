@@ -282,6 +282,7 @@ export type MediaAsset = {
   mime_type: string | null;
   tags: string[] | null;
   client_id: string | null;
+  platform?: string | null;
   created_at: string;
   clients?: { id: string; name: string } | null;
 };

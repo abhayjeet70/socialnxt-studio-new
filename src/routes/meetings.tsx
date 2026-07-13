@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/meetings")({
@@ -35,6 +36,9 @@ function MeetingsPage() {
   const [participantType, setParticipantType] = useState<string>("whole_team");
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  
+  const [teamSearchQuery, setTeamSearchQuery] = useState("");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
 
   const isClient = workspace?.role === "client";
   const canCreate = workspace?.role === "admin" || workspace?.role === "employee";
@@ -61,12 +65,35 @@ function MeetingsPage() {
     const isClosedByEmail = email && closedEmails.has(email);
     return !isClosedByName && !isClosedByEmail;
   });
-  const teamMembers = members.filter((m) => m.role === "employee" || m.role === "admin");
 
-  const allAvailableClients = [
-    ...clientMembers.map(m => ({ id: m.user_id, label: m.users?.full_name || m.users?.email || m.user_id })),
-    ...activeClients.map(c => ({ id: c.id, label: c.name + (c.email ? ` (${c.email})` : "") }))
-  ];
+  const teamMembers = members.filter((m) => {
+    if (m.user_id === workspace?.userId) return false;
+    return m.role === "employee" || m.role === "admin";
+  });
+
+  const availableClientsForEmployee = workspace?.role === "employee" 
+    ? activeClients.filter(c => Object.values(c.team_assignments || {}).includes(workspace?.userId || ""))
+    : activeClients;
+
+  const allAvailableClients = workspace?.role === "employee"
+    ? availableClientsForEmployee.map(c => ({ id: c.id, label: c.name + (c.email ? ` (${c.email})` : "") }))
+    : [
+        ...clientMembers.map(m => ({ id: m.user_id, label: m.users?.full_name || m.users?.email || m.user_id })),
+        ...activeClients.map(c => ({ id: c.id, label: c.name + (c.email ? ` (${c.email})` : "") }))
+      ];
+
+  const filteredTeamMembers = teamMembers.filter(m => {
+    if (!teamSearchQuery) return true;
+    const search = teamSearchQuery.toLowerCase();
+    return (m.users?.full_name?.toLowerCase() || "").includes(search) || 
+           (m.users?.email?.toLowerCase() || "").includes(search) || 
+           (m.agency_role?.toLowerCase() || "").includes(search);
+  });
+
+  const filteredClients = allAvailableClients.filter(c => {
+    if (!clientSearchQuery) return true;
+    return c.label.toLowerCase().includes(clientSearchQuery.toLowerCase());
+  });
 
   const now = new Date();
   const upcoming = meetings.filter((m) => new Date(m.scheduled_at) > now);
@@ -277,7 +304,10 @@ function MeetingsPage() {
         setIsDialogOpen(open);
         if (!open) setEditingMeeting(null);
       }}>
-        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+        <DialogContent 
+          className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6 max-h-[90vh] overflow-y-auto"
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>{editingMeeting ? "Edit Meeting" : "Schedule Meeting"}</DialogTitle>
             <DialogDescription>{editingMeeting ? "Update the details for this meeting." : "Schedule a client sync, content review, or strategy call."}</DialogDescription>
@@ -294,7 +324,13 @@ function MeetingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Date</Label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                <Input 
+                  type="date" 
+                  value={date} 
+                  onChange={(e) => setDate(e.target.value)} 
+                  min={editingMeeting ? undefined : new Date().toISOString().split("T")[0]} 
+                  required 
+                />
               </div>
               <div className="space-y-2">
                 <Label>Time</Label>
@@ -304,64 +340,116 @@ function MeetingsPage() {
             <div className="space-y-4 border rounded-xl p-4 bg-muted/10">
               <div className="flex items-center justify-between">
                 <Label className="font-semibold">Participants</Label>
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => {
-                    const allIds = [
-                      ...teamMembers.map(m => m.user_id), 
-                      ...allAvailableClients.map(c => c.id)
-                    ];
-                    if (participantIds.length === allIds.length) {
-                      setParticipantIds([]); // Deselect all
-                    } else {
-                      setParticipantIds(allIds); // Select all
-                    }
-                  }}
-                  className="h-8 text-xs hover:bg-muted/50"
-                >
-                  {participantIds.length > 0 ? "Toggle All" : "Select All"}
-                </Button>
               </div>
 
-              {teamMembers.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold block">Team Members</Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {teamMembers.map((m) => (
-                      <label key={m.user_id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-2 rounded-lg transition-colors border border-transparent hover:border-border shadow-sm hover:shadow">
-                        <Checkbox
-                          checked={participantIds.includes(m.user_id)}
-                          onCheckedChange={(c) => {
-                            if (c) setParticipantIds([...participantIds, m.user_id]);
-                            else setParticipantIds(participantIds.filter((id) => id !== m.user_id));
-                          }}
-                        />
-                        <span className="truncate text-foreground/90 font-medium">{m.users?.full_name || m.users?.email || m.user_id}</span>
-                      </label>
-                    ))}
+              <div className="flex flex-col sm:flex-row gap-4">
+                {teamMembers.length > 0 && (
+                  <div className="flex-1 space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Select Team</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start font-normal bg-white">
+                          Select Employees ({participantIds.filter(id => teamMembers.some(m => m.user_id === id)).length})
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-64 max-h-60 overflow-y-auto" align="start">
+                        <div className="p-2 pb-1 sticky top-0 bg-popover z-10">
+                          <Input 
+                            placeholder="Search employees..." 
+                            value={teamSearchQuery} 
+                            onChange={(e) => setTeamSearchQuery(e.target.value)}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.preventDefault()}
+                            className="h-8 text-xs" 
+                          />
+                        </div>
+                        {filteredTeamMembers.length === 0 && (
+                          <div className="p-2 text-xs text-muted-foreground text-center">No results found.</div>
+                        )}
+                        {filteredTeamMembers.map((m) => (
+                          <DropdownMenuCheckboxItem
+                            key={m.user_id}
+                            checked={participantIds.includes(m.user_id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) setParticipantIds([...participantIds, m.user_id]);
+                              else setParticipantIds(participantIds.filter((id) => id !== m.user_id));
+                            }}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            <span className="truncate flex-1">{m.users?.full_name || m.users?.email || m.user_id}</span>
+                            <span className="ml-2 text-[10px] text-muted-foreground truncate opacity-80 shrink-0">
+                              ({m.role === 'admin' ? 'Admin' : (m.agency_role || 'Employee')})
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                </div>
-              )}
+                )}
 
-              {allAvailableClients.length > 0 && (
-                <div className="space-y-2 pt-3 border-t">
-                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold block">Clients</Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                    {allAvailableClients.map((m) => (
-                      <label key={m.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-2 rounded-lg transition-colors border border-transparent hover:border-border shadow-sm hover:shadow">
-                        <Checkbox
-                          checked={participantIds.includes(m.id)}
-                          onCheckedChange={(c) => {
-                            if (c) setParticipantIds([...participantIds, m.id]);
-                            else setParticipantIds(participantIds.filter((id) => id !== m.id));
-                          }}
-                        />
-                        <span className="truncate text-foreground/90 font-medium">{m.label}</span>
-                      </label>
-                    ))}
+                {allAvailableClients.length > 0 && (
+                  <div className="flex-1 space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Select Clients</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start font-normal bg-white">
+                          Select Clients ({participantIds.filter(id => allAvailableClients.some(c => c.id === id)).length})
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-64 max-h-60 overflow-y-auto" align="start">
+                        <div className="p-2 pb-1 sticky top-0 bg-popover z-10">
+                          <Input 
+                            placeholder="Search clients..." 
+                            value={clientSearchQuery} 
+                            onChange={(e) => setClientSearchQuery(e.target.value)}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.preventDefault()}
+                            className="h-8 text-xs" 
+                          />
+                        </div>
+                        {filteredClients.length === 0 && (
+                          <div className="p-2 text-xs text-muted-foreground text-center">No results found.</div>
+                        )}
+                        {filteredClients.map((m) => (
+                          <DropdownMenuCheckboxItem
+                            key={m.id}
+                            checked={participantIds.includes(m.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) setParticipantIds([...participantIds, m.id]);
+                              else setParticipantIds(participantIds.filter((id) => id !== m.id));
+                            }}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            <span className="truncate">{m.label}</span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
+                )}
+              </div>
+
+              {participantIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {participantIds.map(id => {
+                    const tm = teamMembers.find(m => m.user_id === id);
+                    if (tm) {
+                      return (
+                        <Badge key={id} variant="secondary" className="font-normal text-xs py-0.5">
+                          {tm.users?.full_name?.split(" ")[0] || "Unknown"} <span className="opacity-60 ml-1">({tm.role === 'admin' ? 'Admin' : (tm.agency_role || 'Employee')})</span>
+                        </Badge>
+                      );
+                    }
+                    const cl = allAvailableClients.find(c => c.id === id);
+                    if (cl) {
+                      return (
+                        <Badge key={id} variant="secondary" className="bg-primary/10 text-primary border-primary/20 font-normal text-xs py-0.5 hover:bg-primary/20">
+                          {cl.label.split("(")[0].trim()}
+                        </Badge>
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               )}
             </div>
