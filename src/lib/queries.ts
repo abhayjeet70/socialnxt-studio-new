@@ -61,6 +61,9 @@ export type Deal = {
   project_name: string;
   amount: number;
   advance_paid?: number;
+  payment_date?: string | null;
+  payment_method?: string | null;
+  payment_note?: string | null;
   days: string;
   stage: string;
   created_by: string;

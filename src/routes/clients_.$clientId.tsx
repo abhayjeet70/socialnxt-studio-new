@@ -124,6 +124,9 @@ function ClientDetailPage() {
   const [dealAmount, setDealAmount] = useState(0);
   const [dealAdvance, setDealAdvance] = useState(0);
   const [dealProject, setDealProject] = useState("");
+  const [dealDate, setDealDate] = useState("");
+  const [dealMethod, setDealMethod] = useState("UPI");
+  const [dealNote, setDealNote] = useState("");
 
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Quotation | null>(null);
@@ -259,11 +262,17 @@ function ClientDetailPage() {
       setDealProject(deal.project_name || "Retainer");
       setDealAmount(deal.amount || 0);
       setDealAdvance(deal.advance_paid || 0);
+      setDealDate(deal.payment_date || new Date().toISOString().split("T")[0]);
+      setDealMethod(deal.payment_method || "UPI");
+      setDealNote(deal.payment_note || "");
     } else {
       setDealTarget(null);
       setDealProject("Retainer");
       setDealAmount(0);
       setDealAdvance(0);
+      setDealDate(new Date().toISOString().split("T")[0]);
+      setDealMethod("UPI");
+      setDealNote("");
     }
     setDealOpen(true);
   };
@@ -275,7 +284,7 @@ function ClientDetailPage() {
     if (dealTarget) {
       updateDeal.mutate({
         id: dealTarget.id,
-        updates: { project_name: dealProject, amount: dealAmount, advance_paid: dealAdvance }
+        updates: { project_name: dealProject, amount: dealAmount, advance_paid: dealAdvance, payment_date: dealDate, payment_method: dealMethod, payment_note: dealNote }
       }, {
         onSuccess: () => { toast.success("Record updated"); setDealOpen(false); },
         onError: (err: any) => toast.error(err.message),
@@ -287,6 +296,9 @@ function ClientDetailPage() {
         project_name: dealProject,
         amount: dealAmount,
         advance_paid: dealAdvance,
+        payment_date: dealDate,
+        payment_method: dealMethod,
+        payment_note: dealNote,
         days: "30",
         stage: "Active",
         created_by: workspace?.userId || "",
@@ -613,33 +625,95 @@ function ClientDetailPage() {
 
       {/* Add/Edit Deal Dialog */}
       <Dialog open={dealOpen} onOpenChange={setDealOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>{dealTarget ? "Edit Revenue Record" : "Log Revenue"}</DialogTitle>
+        <DialogContent className="sm:max-w-[500px] p-0 gap-0 overflow-y-auto max-h-[90vh] bg-[#FAF9F6]">
+          <DialogHeader className="px-6 py-4 border-b bg-white">
+            <DialogTitle className="text-xl font-serif text-foreground/90">{dealTarget ? "Edit Revenue Record" : "Log Revenue"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSaveDeal} className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <Label>Description / Title</Label>
-              <Input value={dealProject} onChange={e => setDealProject(e.target.value)} required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Total Revenue (₹)</Label>
-                <Input type="number" value={dealAmount || ""} onChange={e => setDealAmount(Number(e.target.value) || 0)} required />
+          
+          <div className="p-6 space-y-6">
+            {/* Summary Block */}
+            <div className="flex items-center justify-around px-4 py-5 rounded-xl border border-emerald-100 bg-white shadow-sm">
+              <div className="flex flex-col items-center">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Total</span>
+                <span className="text-xl font-extrabold text-foreground">₹{dealAmount.toLocaleString('en-IN')}</span>
               </div>
-              <div className="space-y-2">
-                <Label>Advance Paid (₹)</Label>
-                <Input type="number" value={dealAdvance || ""} onChange={e => setDealAdvance(Number(e.target.value) || 0)} />
+              <div className="flex flex-col items-center">
+                <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Paid</span>
+                <span className="text-xl font-extrabold text-emerald-600">₹{dealAdvance.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-[11px] font-bold text-orange-500 uppercase tracking-widest mb-1">Balance</span>
+                <span className="text-xl font-extrabold text-orange-500">₹{Math.max(0, dealAmount - dealAdvance).toLocaleString('en-IN')}</span>
               </div>
             </div>
-            <div className="flex gap-2 pt-4">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setDealOpen(false)}>Cancel</Button>
-              <Button type="submit" className="flex-1" disabled={createDeal.isPending || updateDeal.isPending}>
-                {createDeal.isPending || updateDeal.isPending ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
-                Save Record
-              </Button>
+
+            {/* Record Form */}
+            <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-border">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Record Details</span>
+              </div>
+              <form id="deal-form" onSubmit={handleSaveDeal} className="p-5 space-y-5">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Description / Title</Label>
+                  <Input className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealProject} onChange={e => setDealProject(e.target.value)} required placeholder="e.g. Monthly Retainer" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Total Amount</Label>
+                    <Input type="number" className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealAmount || ""} onChange={e => setDealAmount(Number(e.target.value) || 0)} required />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Advance Paid</Label>
+                    <Input type="number" className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealAdvance || ""} onChange={e => setDealAdvance(Number(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Date</Label>
+                    <Input type="date" className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealDate} onChange={e => setDealDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Method</Label>
+                    <Select value={dealMethod} onValueChange={setDealMethod}>
+                      <SelectTrigger className="h-10 border-emerald-100 focus-visible:ring-emerald-500">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UPI">UPI</SelectItem>
+                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Card">Card</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Note (Optional)</Label>
+                  <Input className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealNote} onChange={e => setDealNote(e.target.value)} placeholder="Ref / remark" />
+                </div>
+
+                <div className="flex gap-3 justify-end pt-2">
+                  <Button type="button" variant="outline" className="h-10 px-4 rounded-lg border-border text-foreground hover:bg-muted font-medium" onClick={() => setDealAdvance(dealAmount)}>Full balance</Button>
+                  <Button type="submit" className="h-10 px-5 rounded-lg bg-[#0F4C3A] hover:bg-[#0F4C3A]/90 text-white font-medium" disabled={createDeal.isPending || updateDeal.isPending}>
+                    {createDeal.isPending || updateDeal.isPending ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
+                    {dealTarget ? "Update record" : "Add record"}
+                  </Button>
+                </div>
+              </form>
             </div>
-          </form>
+
+            {/* History Section */}
+            <div className="space-y-3">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest px-1">History</span>
+              <div className="border border-dashed border-border rounded-xl p-8 text-center bg-white shadow-sm">
+                <span className="text-sm text-muted-foreground">No payments recorded yet.</span>
+              </div>
+            </div>
+            
+            <div className="flex justify-end pt-2">
+              <Button type="button" variant="outline" className="h-10 px-6 rounded-lg bg-white border-border hover:bg-muted" onClick={() => setDealOpen(false)}>Close</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       {/* Preview Invoice */}
