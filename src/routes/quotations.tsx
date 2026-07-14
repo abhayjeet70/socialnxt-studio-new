@@ -251,6 +251,7 @@ function QuotationsPage() {
           workspace_id: workspace.workspaceId,
           created_by: workspace.userId,
           client_name: form.client_name,
+          quotation_number: `Q-${Math.floor(Math.random() * 100000)}`,
           assigned_to: form.assigned_to,
           notify_admin: form.notify_admin,
           service_type: form.service_type,

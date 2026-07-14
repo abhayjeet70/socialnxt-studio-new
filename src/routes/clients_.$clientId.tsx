@@ -169,11 +169,11 @@ function ClientDetailPage() {
   const clientInvoices = allQuotations.filter(q => q.client_name?.toLowerCase() === name.toLowerCase() && q.quotation_number.startsWith("INV-"));
 
   const handleGenerateInvoice = () => {
-    const items = clientTasks.filter(t => t.status === "published").map(t => ({
-      description: `${t.topic || t.content_type || 'Task'} - ${(t.platforms || []).join(', ')}`,
+    const items = clientDeals.map(d => ({
+      description: d.project_name || 'Revenue Record',
       qty: 1,
       unit: "Unit",
-      unit_price: 0,
+      unit_price: d.amount || 0,
       hsn_sac: "9983",
     }));
 
@@ -721,31 +721,40 @@ function ClientDetailPage() {
 
       {/* Invoice Editor Modal */}
       <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
-        <DialogContent className="max-w-[95vw] w-[1400px] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/50">
+        <DialogContent className="max-w-[95vw] w-[1400px] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-gray-50/50 [&>button.absolute]:hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b bg-white shrink-0">
             <div>
               <DialogTitle className="text-xl font-bold">{editingInvoice ? "Edit Invoice" : "Generate Invoice"}</DialogTitle>
               <div className="text-sm text-gray-500 mt-1">Adjust line items, pricing, and tax before finalizing.</div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setInvoiceOpen(false)}>Cancel</Button>
-              <Button onClick={() => {
-                if (!ws) return;
-                const payload = {
-                  ...invoiceForm,
-                  workspace_id: ws,
-                  client_name: client.name,
-                  quotation_number: editingInvoice?.quotation_number || `INV-${Math.floor(Math.random() * 100000)}`,
-                };
-                if (editingInvoice) {
-                  updateQuotation.mutate({ id: editingInvoice.id, ...payload }, { onSuccess: () => { setInvoiceOpen(false); toast.success("Invoice updated!"); } });
-                } else {
-                  createQuotation.mutate(payload, { onSuccess: () => { setInvoiceOpen(false); toast.success("Invoice generated!"); } });
-                }
-              }} disabled={createQuotation.isPending || updateQuotation.isPending} className="bg-primary text-white">
-                {createQuotation.isPending || updateQuotation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
-                {editingInvoice ? "Update Invoice" : "Save Invoice"}
-              </Button>
+            <div className="flex items-center gap-4">
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setInvoiceOpen(false)}>Cancel</Button>
+                <Button onClick={() => {
+                  if (!ws || !workspace?.userId) return;
+                  const payload = {
+                    ...invoiceForm,
+                    workspace_id: ws,
+                    created_by: workspace.userId,
+                    client_name: client.name,
+                    quotation_number: editingInvoice?.quotation_number || `INV-${Math.floor(Math.random() * 100000)}`,
+                  };
+                  if (editingInvoice) {
+                    updateQuotation.mutate({ id: editingInvoice.id, ...payload }, { onSuccess: () => { setInvoiceOpen(false); toast.success("Invoice updated!"); } });
+                  } else {
+                    createQuotation.mutate(payload, { onSuccess: () => { setInvoiceOpen(false); toast.success("Invoice generated!"); } });
+                  }
+                }} disabled={createQuotation.isPending || updateQuotation.isPending} className="bg-primary text-white">
+                  {createQuotation.isPending || updateQuotation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
+                  {editingInvoice ? "Update Invoice" : "Save Invoice"}
+                </Button>
+              </div>
+              <button 
+                className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500"
+                onClick={() => setInvoiceOpen(false)}
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
           </div>
           

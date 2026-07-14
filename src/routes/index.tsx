@@ -162,8 +162,8 @@ function Dashboard() {
     return format(d, "yyyy-MM");
   };
 
-  deals.forEach(d => {
-    const dateStr = d.created_at || new Date().toISOString();
+  deals.forEach((d: any) => {
+    const dateStr = d.payment_date || d.created_at || new Date().toISOString();
     if (filterAfterDate && new Date(dateStr) < filterAfterDate) return;
     const key = getBucketKey(dateStr);
     if (timelineMap[key]) {
@@ -403,7 +403,9 @@ function Dashboard() {
         {/* Performance Overview Chart */}
         <div className="card-soft p-5 lg:col-span-2 xl:col-span-1">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
-            <div className="text-lg font-bold">Performance Overview</div>
+            <div className="text-lg font-bold">
+              Performance Overview 
+            </div>
             <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
               <div className="flex bg-muted/50 p-1 rounded-xl overflow-x-auto scrollbar-hide">
                 {["Revenue", "Clients Onboarded", "Tasks Created"].filter(m => !(isEmployee && m === "Revenue")).map(m => (
@@ -437,7 +439,7 @@ function Dashboard() {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={timelineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart key={`${chartMetric}-${timeRange}`} data={timelineData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                   <defs>
                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -458,7 +460,14 @@ function Dashboard() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                   <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} tickFormatter={(val) => chartMetric === 'Revenue' ? `₹${val.toLocaleString("en-IN")}` : val} />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 12, fill: '#6b7280' }} 
+                    tickFormatter={(val) => chartMetric === 'Revenue' ? `₹${val.toLocaleString("en-IN")}` : val} 
+                    domain={[0, (dataMax: number) => Math.max(dataMax, chartMetric === 'Revenue' ? 1000 : 5)]} 
+                    allowDecimals={false}
+                  />
                   <Tooltip 
                     contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     formatter={(val: number, name: string) => [
@@ -580,7 +589,7 @@ function Dashboard() {
               const isCollab = Array.isArray(t.assigned_to) && t.assigned_to.length > 1;
               const assignedMember = members.find((m) => Array.isArray(t.assigned_to) ? t.assigned_to.includes(m.user_id) : m.user_id === (t.assigned_to as any));
               const baseName = assignedMember?.users?.full_name || assignedMember?.users?.email?.split("@")[0] || "Unassigned";
-              const roleName = (assignedMember?.role === "admin" || assignedMember?.role === "owner") ? "Admin" : (assignedMember?.agency_role || "Social Media Manager");
+              const roleName = (assignedMember?.role === "admin" || (assignedMember?.role as string) === "owner") ? "Admin" : (assignedMember?.agency_role || "Social Media Manager");
               const assigneeName = isCollab ? "Collab" : (baseName !== "Unassigned" ? `${baseName} (${roleName})` : "Unassigned");
               return (
                 <div key={t.id} className="flex items-start gap-3">

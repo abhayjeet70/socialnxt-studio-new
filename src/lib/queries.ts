@@ -33,6 +33,7 @@ export type SocialAccount = {
   id: string;
   platform: "facebook" | "instagram" | "linkedin" | "twitter" | "tiktok";
   account_name: string;
+  client_id?: string;
 };
 
 export type User = {
@@ -51,6 +52,8 @@ export type Meeting = {
   scheduled_at: string;
   created_by: string;
   created_at: string;
+  participant_type?: string;
+  participant_ids?: string[];
   users?: Partial<User>; // author info via join
 };
 
@@ -1086,18 +1089,21 @@ export function useCreateQuotation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (
-      quotation: Omit<Quotation, "id" | "quotation_number" | "created_at" | "updated_at"> & {
+      quotation: Omit<Quotation, "id" | "created_at" | "updated_at"> & {
         workspace_id: string;
         created_by: string;
       }
     ) => {
-      // Auto-generate quotation number based on count
-      const { count } = await supabase
-        .from("quotations")
-        .select("*", { count: "exact", head: true })
-        .eq("workspace_id", quotation.workspace_id);
-      const num = String((count ?? 0) + 1).padStart(5, "0");
-      const quotation_number = `Q-${num}`;
+      let quotation_number = quotation.quotation_number;
+      if (!quotation_number) {
+        // Auto-generate quotation number based on count
+        const { count } = await supabase
+          .from("quotations")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", quotation.workspace_id);
+        const num = String((count ?? 0) + 1).padStart(5, "0");
+        quotation_number = `Q-${num}`;
+      }
 
       const { data, error } = await supabase
         .from("quotations")
