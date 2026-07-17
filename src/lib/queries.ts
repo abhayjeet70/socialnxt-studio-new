@@ -169,6 +169,27 @@ export function useUpdateWorkspace() {
   });
 }
 
+export function useDeleteWorkspace() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ workspace_id }: { workspace_id: string }) => {
+      const { data, error } = await supabase
+        .from("workspaces")
+        .delete()
+        .eq("id", workspace_id)
+        .select();
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("Workspace not found or you lack permissions to delete it.");
+      }
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.clear();
+    },
+  });
+}
+
 /** Derive dashboard summary stats from raw posts + accounts */
 export function useDashboardStats(workspaceId: string | undefined): DashboardStats {
   const { data: posts = [] } = usePosts(workspaceId);
@@ -649,7 +670,7 @@ export type Issue = {
   description: string | null;
   issue_type: "New Work Request" | "Bug / Problem" | "Feedback";
   priority: "Low" | "Medium" | "High" | "Critical";
-  status: "Open" | "In Progress" | "Resolved";
+  status: "Open" | "In Progress" | "Resolved" | "Completed" | "Rejected";
   client_id?: string | null;
   client_name?: string | null;
   created_at: string;
@@ -720,8 +741,11 @@ export function useDeleteIssue() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: string }) => {
-      const { error } = await supabase.from("issues").delete().eq("id", id);
+      const { data, error } = await supabase.from("issues").delete().eq("id", id).select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("Issue not found or you lack permissions to delete it.");
+      }
       return true;
     },
     onSuccess: () => {
@@ -746,6 +770,7 @@ export type Client = {
   closed_at?: string | null;
   close_reason?: string | null;
   team_assignments?: Record<string, string> | null;
+  billing_date?: number | null;
 };
 
 export function useClients(workspaceId: string | undefined) {

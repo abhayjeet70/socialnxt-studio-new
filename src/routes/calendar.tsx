@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Loader2, X, ExternalLink, Calendar, Instagram, Facebook, Linkedin, Youtube } from "lucide-react";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
-import { useCurrentWorkspace, usePosts, useUpdatePostStatus, Post, useClients, useWorkspaceMembers } from "@/lib/queries";
+import { useCurrentWorkspace, usePosts, useUpdatePostStatus, Post, useClients, useWorkspaceMembers, useCreatePost } from "@/lib/queries";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
@@ -64,6 +64,7 @@ function CalendarPage() {
   const { data: clients = [], isLoading: isLoadingClients } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
   const updatePostStatus = useUpdatePostStatus();
+  const createPost = useCreatePost();
   const isLoading = isLoadingPosts || isLoadingClients || isLoadingMembers;
 
   const isClient = workspace?.role === "client";
@@ -93,6 +94,37 @@ function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [isAddPostOpen, setIsAddPostOpen] = useState(false);
+  const [newPostClient, setNewPostClient] = useState<string>("");
+  const [newPostType, setNewPostType] = useState<string>("");
+  const [newPostTopic, setNewPostTopic] = useState<string>("");
+
+  const handleAddPostSubmit = () => {
+    if (!workspace || !selectedDay) return;
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDay, 10, 0, 0);
+    createPost.mutate({
+      workspace_id: workspace.workspaceId,
+      author_id: workspace.userId,
+      status: "scheduled",
+      scheduled_for: date.toISOString(),
+      content: "",
+      topic: newPostTopic,
+      content_type: newPostType,
+      client_name: newPostClient,
+      platform: selectedPlatformFilter !== "All Platforms" ? selectedPlatformFilter : undefined,
+    }, {
+      onSuccess: () => {
+        toast.success(`Post added for ${selectedDayLabel}`);
+        setIsAddPostOpen(false);
+        setNewPostClient("");
+        setNewPostType("");
+        setNewPostTopic("");
+      },
+      onError: (err: any) => {
+        toast.error("Error adding post: " + err.message);
+      }
+    });
+  };
 
   // Merge clients table + workspace members with role 'client' into one list for the filter dropdown
   const allClientOptions = useMemo(() => {
@@ -149,12 +181,14 @@ function CalendarPage() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
     setSelectedDay(null);
     setSelectedPost(null);
+    setIsAddPostOpen(false);
   };
 
   const handleNextMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
     setSelectedDay(null);
     setSelectedPost(null);
+    setIsAddPostOpen(false);
   };
 
   const goToday = () => {
@@ -162,6 +196,7 @@ function CalendarPage() {
     setCurrentDate(new Date(now.getFullYear(), now.getMonth(), 1));
     setSelectedDay(now.getDate());
     setSelectedPost(null);
+    setIsAddPostOpen(false);
   };
 
   const firstWeekday = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
@@ -196,6 +231,7 @@ function CalendarPage() {
   const handleDayClick = (d: number) => {
     setSelectedDay(d);
     setSelectedPost(null);
+    setIsAddPostOpen(false);
   };
 
   const handleStatusChange = (post: Post, newStatus: string) => {
@@ -592,7 +628,7 @@ function CalendarPage() {
 
                               {/* Status actions (agency only) */}
                               {!isClient && post.status !== "published" && (
-                                <div className="flex gap-1.5 pt-1">
+                                <div className="flex flex-wrap gap-1.5 pt-1">
                                   {post.status !== "scheduled" && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleStatusChange(post, "scheduled"); }}
@@ -606,6 +642,16 @@ function CalendarPage() {
                                     className="text-[10px] px-2.5 py-1 rounded-lg bg-green-50 text-green-700 font-semibold hover:bg-green-100 transition-colors"
                                   >
                                     Mark Published
+                                  </button>
+
+                                  <button
+                                    onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      window.location.href = `/tasks${post.client_name ? `?client=${encodeURIComponent(post.client_name)}&highlight=${post.id}` : `?highlight=${post.id}`}`; 
+                                    }}
+                                    className="text-[10px] px-2.5 py-1 rounded-lg bg-primary/10 text-primary font-semibold hover:bg-primary/20 transition-colors flex items-center gap-1"
+                                  >
+                                    <ExternalLink className="w-3 h-3" /> Edit in Content Sheet
                                   </button>
                                 </div>
                               )}
@@ -622,7 +668,7 @@ function CalendarPage() {
               {!isClient && (
                 <div className="p-3 border-t border-border">
                   <button
-                    onClick={() => toast.info(`Add post for ${selectedDayLabel}`)}
+                    onClick={() => setIsAddPostOpen(true)}
                     className="w-full text-xs font-medium py-2 rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors flex items-center justify-center gap-1.5"
                   >
                     <span className="text-base leading-none">+</span> Add to this day
@@ -633,6 +679,55 @@ function CalendarPage() {
           )}
         </div>
       </div>
+
+      {/* Desktop Add Post Modal */}
+      {isAddPostOpen && selectedDay && !isClient && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsAddPostOpen(false)} />
+           <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4">
+              <h2 className="text-lg font-bold">Add Post for {selectedDayLabel}</h2>
+              <div className="space-y-3">
+                 <div>
+                    <label className="text-xs font-semibold text-muted-foreground mb-1 block">Client</label>
+                    <Select value={newPostClient} onValueChange={setNewPostClient}>
+                      <SelectTrigger className="w-full h-10 rounded-xl bg-white border-input">
+                        <SelectValue placeholder="Select Client" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allClientOptions.filter(o => o.group === 'clients').map(o => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-muted-foreground mb-1 block">Topic / Title</label>
+                    <input 
+                      type="text" 
+                      className="w-full h-10 rounded-xl border border-input px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary" 
+                      value={newPostTopic} 
+                      onChange={e => setNewPostTopic(e.target.value)} 
+                      placeholder="e.g. Diwali Campaign" 
+                    />
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-muted-foreground mb-1 block">Content Type</label>
+                    <input 
+                      type="text" 
+                      className="w-full h-10 rounded-xl border border-input px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary" 
+                      value={newPostType} 
+                      onChange={e => setNewPostType(e.target.value)} 
+                      placeholder="e.g. Reel, Static, Carousel" 
+                    />
+                 </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                 <Button variant="outline" className="rounded-xl" onClick={() => setIsAddPostOpen(false)}>Cancel</Button>
+                 <Button className="rounded-xl" onClick={handleAddPostSubmit} disabled={createPost.isPending || !newPostClient}>Save</Button>
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* Mobile modal — centered dialog when a day is tapped on small screens */}
       {selectedDay && (

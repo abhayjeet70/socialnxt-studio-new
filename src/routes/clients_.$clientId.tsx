@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import {
   ArrowLeft, Loader2, ExternalLink, LogIn, Trash2, Plus, Mail, Building2,
   CheckCircle2, ListTodo, FileText, Receipt, KanbanSquare, AlertOctagon, Copy, IndianRupee,
-  Instagram, Facebook, Linkedin, Youtube, Users, Pencil, X
+  Instagram, Facebook, Linkedin, Youtube, Users, Pencil, X, Phone, Calendar
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -76,6 +76,7 @@ function Section({ icon: Icon, title, count, children }: { icon: any; title: str
 
 function ClientDetailPage() {
   const { clientId } = useParams({ from: "/clients_/$clientId" });
+  const navigate = useNavigate();
   const { data: workspace } = useCurrentWorkspace();
   const ws = workspace?.workspaceId;
   const isStaff = workspace?.role === "admin" || workspace?.role === "employee";
@@ -118,6 +119,7 @@ function ClientDetailPage() {
   const [editPlatforms, setEditPlatforms] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState("Planning");
   const [editTeam, setEditTeam] = useState<Record<string, string>>({});
+  const [editBillingDate, setEditBillingDate] = useState<number | "">("");
 
   const [dealOpen, setDealOpen] = useState(false);
   const [dealTarget, setDealTarget] = useState<any>(null);
@@ -139,6 +141,8 @@ function ClientDetailPage() {
     extra_fields: {}
   });
   const [previewInvoice, setPreviewInvoice] = useState<Quotation | null>(null);
+
+  const [activeTab, setActiveTab] = useState("Social Handles");
 
   if (isLoading) {
     return (
@@ -230,6 +234,7 @@ function ClientDetailPage() {
     setEditPlatforms(client.platforms || []);
     setEditStatus(client.status);
     setEditTeam(client.team_assignments || {});
+    setEditBillingDate(client.billing_date || "");
   };
 
   const handleUpdateClient = async (e: React.FormEvent) => {
@@ -246,6 +251,7 @@ function ClientDetailPage() {
         platforms: editPlatforms,
         status: editStatus,
         team_assignments: editTeam,
+        billing_date: editBillingDate || null,
       },
     }, {
       onSuccess: () => {
@@ -259,7 +265,7 @@ function ClientDetailPage() {
   const openDeal = (deal?: any) => {
     if (deal) {
       setDealTarget(deal);
-      setDealProject(deal.project_name || "Retainer");
+      setDealProject(deal.project_name || "");
       setDealAmount(deal.amount || 0);
       setDealAdvance(deal.advance_paid || 0);
       setDealDate(deal.payment_date || new Date().toISOString().split("T")[0]);
@@ -267,7 +273,7 @@ function ClientDetailPage() {
       setDealNote(deal.payment_note || "");
     } else {
       setDealTarget(null);
-      setDealProject("Retainer");
+      setDealProject("");
       setDealAmount(0);
       setDealAdvance(0);
       setDealDate(new Date().toISOString().split("T")[0]);
@@ -309,248 +315,432 @@ function ClientDetailPage() {
     }
   };
 
+  // helpers
+  const clientCode = "CL-" + client.id.replace(/-/g, "").slice(0, 8).toUpperCase();
+  const isInactive = client.status === "Closed" || client.status === "Inactive";
+  const manager = (() => {
+    const id = client.team_assignments?.["Account/Social Media Manager"];
+    const m = id ? members.find(m => m.user_id === id) : null;
+    return m ? (m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown") : null;
+  })();
+  const managerInitials = manager ? manager.substring(0,2).toUpperCase() : null;
+
   return (
-    <AppShell title={name} subtitle={client.industry || "Client account"}>
-      <div className="mb-4">
-        <Link to="/clients" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> All clients
-        </Link>
-      </div>
-
-      <div className="grid lg:grid-cols-[320px_1fr] gap-5">
-        {/* ── Profile column ── */}
-        <div className="space-y-5">
-          <div className="card-soft p-5 relative">
-            {isStaff && (
-              <Button variant="ghost" size="icon" className="absolute top-4 right-4 h-8 w-8 text-muted-foreground hover:text-foreground" onClick={openEdit}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-            )}
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 pr-8">
-                <div className="font-bold text-xl truncate">{name}</div>
-                <Badge className={`rounded-sm font-bold tracking-wider text-[10px] px-2 py-0.5 border-0 mt-1.5 ${client.status === 'Closed' ? 'bg-muted text-muted-foreground' : 'bg-emerald-50 text-emerald-600'}`}>
-                  {client.status === 'Closed' ? 'INACTIVE' : 'ACTIVE'}
-                </Badge>
-              </div>
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" /><span className="truncate">{client.email || "No email"}</span></div>
-              <div className="flex items-center gap-2 text-muted-foreground"><Building2 className="h-4 w-4" /><span>{client.industry || "—"}</span></div>
-            </div>
-            {client.platforms && client.platforms.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {client.platforms.map((p) => (
-                  <span key={p} className="text-[11px] font-semibold px-2 py-0.5 rounded-full text-white" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#666" }}>{p}</span>
-                ))}
-              </div>
-            )}
-            
-            {/* Team Roles */}
-            <div className="mt-5 pt-4 border-t border-border">
-              <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Allocated Team</div>
-              <div className="space-y-3">
-                {["Account/Social Media Manager", "Designer", "Video Editor"].map(role => {
-                  const managerId = client.team_assignments?.[role];
-                  const member = managerId ? members.find(m => m.user_id === managerId) : null;
-                  const displayName = member ? (member.users?.full_name || member.users?.email?.split("@")[0] || "Unknown") : "Unassigned";
-                  const initials = member ? displayName.substring(0,2).toUpperCase() : "-";
-                  const bg = role === "Designer" ? "bg-purple-100 text-purple-700" : role === "Video Editor" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700";
-
-                  return (
-                    <div key={role} className="flex items-center gap-2.5">
-                      <div className={`h-8 w-8 rounded-full grid place-items-center text-[10px] font-bold shrink-0 ${member ? bg : 'bg-muted text-muted-foreground'}`}>
-                        {initials}
-                      </div>
-                      <div className="min-w-0">
-                        <div className={`text-sm truncate font-medium ${!member && 'text-muted-foreground'}`}>{displayName}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">{role}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+    <AppShell title="" subtitle="">
+      {/* ── Breadcrumb + page header ── */}
+      <div className="mb-6">
+        <p className="text-[11px] font-bold tracking-widest text-primary uppercase mb-1">
+          Delivery · Client · {clientCode}
+        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">{name}</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">{client.industry || client.email || "Client account"}</p>
           </div>
-
-          {/* quick stats */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="card-soft p-3">
-              <ListTodo className="h-4 w-4 text-muted-foreground mb-1" />
-              <div className="text-xl font-bold">{clientTasks.length}</div>
-              <div className="text-xs text-muted-foreground">Tasks</div>
-            </div>
-            {workspace?.role !== "employee" && (
-              <>
-                <div className="card-soft p-3">
-                  <IndianRupee className="h-4 w-4 text-emerald-600 mb-1" />
-                  <div className="text-xl font-bold">{totalRevenue.toLocaleString("en-IN")}</div>
-                  <div className="text-xs text-muted-foreground">Deal Revenue</div>
-                </div>
-                <div className="card-soft p-3">
-                  <CheckCircle2 className="h-4 w-4 text-muted-foreground mb-1" />
-                  <div className="text-xl font-bold">{advancePaid.toLocaleString("en-IN")}</div>
-                  <div className="text-xs text-muted-foreground">Advance</div>
-                </div>
-                <div className="card-soft p-3 border-rose-100">
-                  <AlertOctagon className="h-4 w-4 text-rose-500 mb-1" />
-                  <div className="text-xl font-bold">{pendingPayment.toLocaleString("en-IN")}</div>
-                  <div className="text-xs text-muted-foreground">Pending</div>
-                </div>
-              </>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link to="/clients">
+              <Button variant="outline" className="rounded-xl h-9 gap-1.5">
+                <ArrowLeft className="h-4 w-4" /> Back
+              </Button>
+            </Link>
+            {isStaff && (
+              <Button className="rounded-xl h-9 gap-1.5" onClick={openEdit}>
+                <Pencil className="h-4 w-4" /> Edit
+              </Button>
             )}
           </div>
         </div>
+      </div>
 
-        {/* ── Related lists ── */}
-        <div className="space-y-5">
-          {/* Social handles — quick login */}
-          <Section icon={LogIn} title="Social Handles — one-click login" count={socials.length}>
-            <div className="divide-y divide-border">
-              {socials.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No handles saved yet.</div>}
-              {socials.map((s) => (
-                <div key={s.id} className="flex items-center gap-3 px-4 py-3">
-                  <span className="h-8 w-8 shrink-0 rounded-lg grid place-items-center text-white text-[11px] font-bold" style={{ background: PLATFORM_COLOR[s.platform as keyof typeof PLATFORM_COLOR] || "#666" }}>{s.platform[0]}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{s.handle || s.username || s.platform}</div>
-                    <div className="text-xs text-muted-foreground truncate">{s.platform}{s.username ? ` · ${s.username}` : ""}</div>
-                  </div>
-                  {s.profile_url && (
-                    <a href={s.profile_url} target="_blank" rel="noreferrer" className="h-8 w-8 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground" title="Open profile"><ExternalLink className="h-4 w-4" /></a>
-                  )}
-                  <Button size="sm" className="h-8 rounded-lg" onClick={() => handleLogin(s)}>
-                    <LogIn className="h-3.5 w-3.5 mr-1" /> Login
-                  </Button>
-                  {isStaff && (
-                    <button onClick={() => { if (confirm("Remove this handle?")) delSocial.mutate({ id: s.id, client_id: client.id }); }} className="h-8 w-8 grid place-items-center rounded-lg hover:bg-red-50 text-red-500" title="Remove"><Trash2 className="h-4 w-4" /></button>
-                  )}
+      {/* ── CLIENT DETAILS card ── */}
+      <div 
+        onClick={openEdit}
+        className="rounded-2xl border border-border bg-white p-6 mb-4 shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group"
+      >
+        <div className="flex justify-between items-center mb-5">
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Client Details</p>
+          <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-5">
+          {/* Client ID */}
+          <div className="flex gap-3">
+            <Users className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">Client ID</p>
+              <p className="text-sm font-semibold text-foreground">{clientCode}</p>
+            </div>
+          </div>
+          {/* Company */}
+          <div className="flex gap-3">
+            <Building2 className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">Company</p>
+              <p className="text-sm font-semibold text-foreground">{name}</p>
+            </div>
+          </div>
+          {/* Email */}
+          <div className="flex gap-3">
+            <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">Email</p>
+              <p className="text-sm font-semibold text-foreground">{client.email || "—"}</p>
+            </div>
+          </div>
+          {/* Industry */}
+          <div className="flex gap-3">
+            <Phone className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">Industry</p>
+              <p className="text-sm font-semibold text-foreground">{client.industry || "—"}</p>
+            </div>
+          </div>
+          {/* Member since */}
+          <div className="flex gap-3">
+            <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">Client Since</p>
+              <p className="text-sm font-semibold text-foreground">{new Date(client.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</p>
+            </div>
+          </div>
+          {/* Platforms */}
+          <div className="flex gap-3">
+            <KanbanSquare className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">Platforms</p>
+              {client.platforms && client.platforms.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {client.platforms.map(p => (
+                    <span key={p} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#666" }}>{p}</span>
+                  ))}
                 </div>
+              ) : <p className="text-sm font-semibold text-foreground">—</p>}
+            </div>
+          </div>
+        </div>
+        {/* Notes row */}
+        {client.industry && (
+          <div className="mt-5 pt-4 border-t border-border/60 flex gap-3">
+            <FileText className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">Notes</p>
+              <p className="text-sm text-foreground">—</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Stats strip ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        {/* Status */}
+        <div 
+          onClick={openEdit}
+          className="rounded-2xl border border-border bg-white p-4 shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group relative"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Status</p>
+            <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute top-4 right-4" />
+          </div>
+          <p className={`text-sm font-bold ${isInactive ? "text-muted-foreground" : "text-primary"}`}>
+            {isInactive ? "Inactive" : "Active"}
+          </p>
+          {manager && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <div className="h-5 w-5 rounded-full bg-blue-100 text-blue-700 grid place-items-center text-[9px] font-bold shrink-0">{managerInitials}</div>
+              <span className="text-[11px] text-muted-foreground truncate">{manager}</span>
+            </div>
+          )}
+        </div>
+        {/* Revenue */}
+        {workspace?.role !== "employee" && (
+          <>
+            <div 
+              onClick={openEdit}
+              className="rounded-2xl border border-border bg-white p-4 shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group relative"
+            >
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Total Revenue</p>
+                <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute top-4 right-4" />
+              </div>
+              <p className="text-sm font-bold text-primary">₹{totalRevenue.toLocaleString("en-IN")}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">paid to date</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Advance Paid</p>
+              <p className="text-sm font-bold text-foreground">₹{advancePaid.toLocaleString("en-IN")}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">received</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Outstanding</p>
+              <p className={`text-sm font-bold ${pendingPayment > 0 ? "text-rose-500" : "text-foreground"}`}>₹{pendingPayment.toLocaleString("en-IN")}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">unpaid invoices</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Billing Date</p>
+              <p className="text-sm font-bold text-foreground">
+                {client.billing_date ? (
+                  <>
+                    {client.billing_date}{["st", "nd", "rd"][((client.billing_date + 90) % 100 - 10) % 10 - 1] || "th"}
+                  </>
+                ) : "—"}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-1">of every month</p>
+            </div>
+          </>
+        )}
+        {/* Tasks */}
+        <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Tasks</p>
+          <p className="text-sm font-bold text-foreground">{clientTasks.length}</p>
+          <p className="text-[11px] text-muted-foreground mt-1">content items</p>
+        </div>
+        {/* Services */}
+        <div 
+          onClick={openEdit}
+          className="rounded-2xl border border-border bg-white p-4 shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group relative"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Services</p>
+            <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute top-4 right-4" />
+          </div>
+          {client.platforms && client.platforms.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {client.platforms.slice(0,2).map(p => (
+                <span key={p} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#666" }}>{p}</span>
               ))}
             </div>
-            {isStaff && (
-              <div className="px-4 py-3 border-t border-border">
-                <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setAddOpen(true)}><Plus className="h-4 w-4 mr-1" /> Add handle</Button>
-              </div>
-            )}
-          </Section>
+          ) : <p className="text-sm font-semibold text-muted-foreground">—</p>}
+        </div>
+      </div>
 
-          {/* Tasks with Complete button */}
-          <Section icon={ListTodo} title="Tasks" count={clientTasks.length}>
-            <div className="divide-y divide-border">
-              {clientTasks.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No tasks for this client.</div>}
-              {clientTasks.map((t) => {
-                const done = t.status === "published";
+      {/* ── Team + Related lists ── */}
+      <div className="grid lg:grid-cols-[260px_1fr] gap-5">
+        {/* Team card */}
+        <div className="space-y-4">
+          <div 
+            onClick={openEdit}
+            className="rounded-2xl border border-border bg-white p-5 shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group relative"
+          >
+            <div className="flex justify-between items-start mb-5">
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Allocated Team</p>
+              <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute top-5 right-5" />
+            </div>
+            <div className="space-y-3">
+              {["Account/Social Media Manager", "Designer", "Video Editor"].map(role => {
+                const managerId = client.team_assignments?.[role];
+                const member = managerId ? members.find(m => m.user_id === managerId) : null;
+                const displayName = member ? (member.users?.full_name || member.users?.email?.split("@")[0] || "Unknown") : "Unassigned";
+                const initials = member ? displayName.substring(0,2).toUpperCase() : "-";
+                const bg = role === "Designer" ? "bg-purple-100 text-purple-700" : role === "Video Editor" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700";
                 return (
-                  <div key={t.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">{t.topic || t.content_type || "Untitled task"}</div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {(t.platforms || []).join(", ") || t.platform || "—"}
-                        {t.scheduled_for ? ` · ${new Date(t.scheduled_for).toLocaleDateString()}` : ""}
-                      </div>
+                  <div key={role} className="flex items-center gap-2.5">
+                    <div className={`h-8 w-8 rounded-full grid place-items-center text-[10px] font-bold shrink-0 ${member ? bg : 'bg-muted text-muted-foreground'}`}>{initials}</div>
+                    <div className="min-w-0">
+                      <div className={`text-sm truncate font-medium ${!member && 'text-muted-foreground'}`}>{displayName}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{role}</div>
                     </div>
-                    <Badge className="rounded-full border-0 bg-muted text-foreground/70 capitalize">{t.status.replace(/_/g, " ")}</Badge>
-                    {done ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-600 text-xs font-semibold"><CheckCircle2 className="h-4 w-4" /> Done</span>
-                    ) : (
-                      isStaff && (
-                        <Button size="sm" variant="outline" className="h-8 rounded-lg text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => completeTask(t.id)} disabled={updateStatus.isPending}>
-                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Complete
-                        </Button>
-                      )
-                    )}
                   </div>
                 );
               })}
             </div>
-            <div className="px-4 py-2 border-t border-border">
-              <a href={`/tasks?client=${encodeURIComponent(client.name)}`} className="text-xs text-primary hover:underline">Open content sheet →</a>
-            </div>
-          </Section>
+          </div>
+        </div>
 
-          {/* Revenue Records */}
-          {workspace?.role !== "employee" && (
-            <Section icon={IndianRupee} title="Revenue Records" count={clientDeals.length}>
-              <div className="divide-y divide-border">
-                {clientDeals.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No revenue logged yet.</div>}
-                {clientDeals.map((d) => (
-                  <div key={d.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">{d.project_name}</div>
-                      <div className="text-xs text-muted-foreground truncate">{new Date(d.created_at).toLocaleDateString()}</div>
-                    </div>
-                    <div className="text-right mr-4">
-                      <div className="text-sm font-bold text-emerald-600">₹{(d.amount || 0).toLocaleString("en-IN")}</div>
-                      <div className="text-[10px] text-muted-foreground">Adv: ₹{(d.advance_paid || 0).toLocaleString("en-IN")}</div>
-                    </div>
-                    {isStaff && (
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => openDeal(d)}><Pencil className="h-4 w-4" /></Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this record?")) deleteDeal.mutate({id: d.id}); }}><Trash2 className="h-4 w-4" /></Button>
+        {/* ── Related lists ── */}
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: "Social Handles", count: socials.length },
+              { id: "Tasks", count: clientTasks.length },
+              ...(workspace?.role !== "employee" ? [
+                { id: "Revenue", count: clientDeals.length },
+                { id: "Invoices", count: clientInvoices.length }
+              ] : []),
+              { id: "Issues", count: clientIssues.length }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors ${
+                  activeTab === tab.id 
+                    ? "bg-primary text-primary-foreground" 
+                    : "bg-transparent border border-border text-muted-foreground hover:bg-gray-50"
+                }`}
+              >
+                {tab.id}
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.id ? "bg-white/20" : "bg-muted text-muted-foreground"}`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-2">
+            {/* Social handles — quick login */}
+            {activeTab === "Social Handles" && (
+              <Section icon={LogIn} title="Social Handles — one-click login" count={socials.length}>
+                <div className="divide-y divide-border">
+                  {socials.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No handles saved yet.</div>}
+                  {socials.map((s) => (
+                    <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+                      <span className="h-8 w-8 shrink-0 rounded-lg grid place-items-center text-white text-[11px] font-bold" style={{ background: PLATFORM_COLOR[s.platform as keyof typeof PLATFORM_COLOR] || "#666" }}>{s.platform[0]}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{s.handle || s.username || s.platform}</div>
+                        <div className="text-xs text-muted-foreground truncate">{s.platform}{s.username ? ` · ${s.username}` : ""}</div>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {isStaff && (
-                <div className="px-4 py-3 border-t border-border">
-                  <Button variant="outline" size="sm" className="rounded-lg" onClick={() => openDeal()}><Plus className="h-4 w-4 mr-1" /> Log Revenue</Button>
+                      {s.profile_url && (
+                        <a href={s.profile_url} target="_blank" rel="noreferrer" className="h-8 w-8 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground" title="Open profile"><ExternalLink className="h-4 w-4" /></a>
+                      )}
+                      <Button size="sm" className="h-8 rounded-lg" onClick={() => handleLogin(s)}>
+                        <LogIn className="h-3.5 w-3.5 mr-1" /> Login
+                      </Button>
+                      {isStaff && (
+                        <button onClick={() => { if (confirm("Remove this handle?")) delSocial.mutate({ id: s.id, client_id: client.id }); }} className="h-8 w-8 grid place-items-center rounded-lg hover:bg-red-50 text-red-500" title="Remove"><Trash2 className="h-4 w-4" /></button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              )}
-            </Section>
-          )}
+                {isStaff && (
+                  <div className="px-4 py-3 border-t border-border">
+                    <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setAddOpen(true)}><Plus className="h-4 w-4 mr-1" /> Add handle</Button>
+                  </div>
+                )}
+              </Section>
+            )}
 
-          {/* Invoices */}
-          {workspace?.role !== "employee" && (
-            <Section icon={Receipt} title="Invoices" count={clientInvoices.length}>
-              <div className="divide-y divide-border">
-                {clientInvoices.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No invoices generated yet.</div>}
-                {clientInvoices.map((inv) => (
-                  <div key={inv.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">{inv.quotation_number}</div>
-                      <div className="text-xs text-muted-foreground truncate">{new Date(inv.created_at).toLocaleDateString()}</div>
-                    </div>
-                    <Badge className="rounded-full border-0 bg-muted text-foreground/70">{inv.status}</Badge>
-                    <div className="text-right mr-2">
-                      <div className="text-sm font-bold text-emerald-600">₹{(inv.line_items.reduce((s: number, i: any) => s + (i.qty * i.unit_price), 0) * (1 + inv.tax_rate/100)).toLocaleString("en-IN", {maximumFractionDigits: 0})}</div>
-                    </div>
-                    {isStaff && (
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => { setEditingInvoice(inv); setInvoiceForm(inv); setInvoiceOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:bg-muted" onClick={() => setPreviewInvoice(inv)}><FileText className="h-4 w-4" /></Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this invoice?")) deleteQuotation.mutate({ id: inv.id }); }}><Trash2 className="h-4 w-4" /></Button>
+            {/* Tasks with Complete button */}
+            {activeTab === "Tasks" && (
+              <Section icon={ListTodo} title="Tasks" count={clientTasks.length}>
+                <div className="divide-y divide-border">
+                  {clientTasks.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No tasks for this client.</div>}
+                  {clientTasks.map((t) => {
+                    const done = t.status === "published";
+                    return (
+                      <div key={t.id} className="flex items-center gap-3 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">{t.topic || t.content_type || "Untitled task"}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {(t.platforms || []).join(", ") || t.platform || "—"}
+                            {t.scheduled_for ? ` · ${new Date(t.scheduled_for).toLocaleDateString()}` : ""}
+                          </div>
+                        </div>
+                        <Badge className="rounded-full border-0 bg-muted text-foreground/70 capitalize">{t.status.replace(/_/g, " ")}</Badge>
+                        {done ? (
+                          <span className="inline-flex items-center gap-1 text-primary text-xs font-semibold"><CheckCircle2 className="h-4 w-4" /> Done</span>
+                        ) : (
+                          isStaff && (
+                            <Button size="sm" variant="outline" className="h-8 rounded-lg text-primary border-primary/20 hover:bg-primary/10" onClick={() => completeTask(t.id)} disabled={updateStatus.isPending}>
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Complete
+                            </Button>
+                          )
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {isStaff && (
-                <div className="px-4 py-3 border-t border-border">
-                  <Button variant="outline" size="sm" className="rounded-lg" onClick={handleGenerateInvoice}><Plus className="h-4 w-4 mr-1" /> Generate Invoice from Tasks</Button>
+                    );
+                  })}
                 </div>
-              )}
-            </Section>
-          )}
+                <div className="px-4 py-2 border-t border-border">
+                  <button onClick={() => navigate({ to: '/tasks', search: { client: client.name } as any })} className="text-xs text-primary hover:underline">Open content sheet →</button>
+                </div>
+              </Section>
+            )}
 
-          {/* Issues */}
-          <Section icon={AlertOctagon} title="Client Issues" count={clientIssues.length}>
-            <div className="divide-y divide-border">
-              {clientIssues.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No issues linked to this client.</div>}
-              {clientIssues.map((i: any) => (
-                <div key={i.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{i.title}</div>
-                    <div className="text-xs text-muted-foreground truncate">{i.issue_type} · {i.priority}</div>
-                  </div>
-                  <Badge className="rounded-full border-0 bg-muted text-foreground/70">{i.status}</Badge>
+            {/* Revenue Records */}
+            {activeTab === "Revenue" && workspace?.role !== "employee" && (
+              <Section icon={IndianRupee} title="Revenue Records" count={clientDeals.length}>
+                <div className="divide-y divide-border">
+                  {clientDeals.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No revenue logged yet.</div>}
+                  {clientDeals.map((d) => (
+                    <div key={d.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{d.project_name}</div>
+                        <div className="text-xs text-muted-foreground truncate">{new Date(d.created_at).toLocaleDateString()}</div>
+                      </div>
+                      <div className="text-right mr-4">
+                        <div className="text-sm font-bold text-primary">₹{(d.amount || 0).toLocaleString("en-IN")}</div>
+                        <div className="text-[10px] text-muted-foreground">Adv: ₹{(d.advance_paid || 0).toLocaleString("en-IN")}</div>
+                      </div>
+                      {isStaff && (
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => openDeal(d)}><Pencil className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this record?")) deleteDeal.mutate({id: d.id}); }}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className="px-4 py-2 border-t border-border">
-              <a href={`/issues?client=${encodeURIComponent(client.name)}`} className="text-xs text-primary hover:underline">Open issues →</a>
-            </div>
-          </Section>
+                {isStaff && (
+                  <div className="px-4 py-3 border-t border-border">
+                    <Button variant="outline" size="sm" className="rounded-lg" onClick={() => openDeal()}><Plus className="h-4 w-4 mr-1" /> Log Revenue</Button>
+                  </div>
+                )}
+              </Section>
+            )}
+
+            {/* Invoices */}
+            {activeTab === "Invoices" && workspace?.role !== "employee" && (
+              <Section icon={Receipt} title="Invoices" count={clientInvoices.length}>
+                <div className="divide-y divide-border">
+                  {clientInvoices.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No invoices generated yet.</div>}
+                  {clientInvoices.map((inv) => (
+                    <div key={inv.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{inv.quotation_number}</div>
+                        <div className="text-xs text-muted-foreground truncate">{new Date(inv.created_at).toLocaleDateString()}</div>
+                      </div>
+                      <Badge className="rounded-full border-0 bg-muted text-foreground/70">{inv.status}</Badge>
+                      <div className="text-right mr-2">
+                        <div className="text-sm font-bold text-primary">₹{(
+                          (() => {
+                            const sub = inv.line_items.reduce((s: number, i: any) => {
+                              const gross = (i.qty || 0) * (i.unit_price || 0);
+                              return s + (gross - (gross * (i.discount || 0)) / 100);
+                            }, 0);
+                            return sub + (sub * (inv.tax_rate || 0)) / 100;
+                          })()
+                        ).toLocaleString("en-IN", {maximumFractionDigits: 0})}</div>
+                      </div>
+                      {isStaff && (
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => { setEditingInvoice(inv); setInvoiceForm(inv); setInvoiceOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:bg-muted" onClick={() => setPreviewInvoice(inv)}><FileText className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this invoice?")) deleteQuotation.mutate({ id: inv.id }); }}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {isStaff && (
+                  <div className="px-4 py-3 border-t border-border">
+                    <Button variant="outline" size="sm" className="rounded-lg" onClick={handleGenerateInvoice}><Plus className="h-4 w-4 mr-1" /> Generate Invoice from Tasks</Button>
+                  </div>
+                )}
+              </Section>
+            )}
+
+            {/* Issues */}
+            {activeTab === "Issues" && (
+              <Section icon={AlertOctagon} title="Client Issues" count={clientIssues.length}>
+                <div className="divide-y divide-border">
+                  {clientIssues.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground text-center">No issues linked to this client.</div>}
+                  {clientIssues.map((i: any) => (
+                    <div 
+                      key={i.id} 
+                      className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => navigate({ to: '/issues', search: { client: client?.id } as any })}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate hover:text-primary transition-colors">{i.title}</div>
+                        <div className="text-xs text-muted-foreground truncate">{i.issue_type} · {i.priority}</div>
+                      </div>
+                      <Badge className="rounded-full border-0 bg-muted text-foreground/70">{i.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-4 py-2 border-t border-border">
+                  <button onClick={() => navigate({ to: '/issues', search: { client: client?.id } as any })} className="text-xs text-primary hover:underline">Open issues →</button>
+                </div>
+              </Section>
+            )}
+          </div>
         </div>
       </div>
 
@@ -590,9 +780,60 @@ function ClientDetailPage() {
             <DialogTitle>Edit Profile & Team</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleUpdateClient} className="space-y-4 pt-4 max-h-[80vh] overflow-y-auto px-1">
-            <div className="space-y-2">
-              <Label>Client Name</Label>
-              <Input value={editName} onChange={e => setEditName(e.target.value)} required />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Client Name</Label>
+                <Input value={editName} onChange={e => setEditName(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={editStatus} onValueChange={setEditStatus}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                    <SelectItem value="Planning">Planning</SelectItem>
+                    <SelectItem value="Review">Review</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Industry</Label>
+                <Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Billing Date (Day of month)</Label>
+                <Input type="number" min="1" max="31" value={editBillingDate} onChange={e => setEditBillingDate(Number(e.target.value) || "")} placeholder="e.g. 5 for 5th" />
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Services (Platforms)</Label>
+              <div className="flex flex-wrap gap-2">
+                {PLATFORMS.map(p => {
+                  const isSelected = editPlatforms.includes(p);
+                  return (
+                    <Badge
+                      key={p}
+                      variant="outline"
+                      className={`cursor-pointer transition-colors ${isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                      onClick={() => setEditPlatforms(isSelected ? editPlatforms.filter(x => x !== p) : [...editPlatforms, p])}
+                    >
+                      {p}
+                    </Badge>
+                  );
+                })}
+              </div>
             </div>
             
             <div className="space-y-2 pt-2">
@@ -638,8 +879,8 @@ function ClientDetailPage() {
                 <span className="text-xl font-extrabold text-foreground">₹{dealAmount.toLocaleString('en-IN')}</span>
               </div>
               <div className="flex flex-col items-center">
-                <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Paid</span>
-                <span className="text-xl font-extrabold text-emerald-600">₹{dealAdvance.toLocaleString('en-IN')}</span>
+                <span className="text-[11px] font-bold text-primary uppercase tracking-widest mb-1">Paid</span>
+                <span className="text-xl font-extrabold text-primary">₹{dealAdvance.toLocaleString('en-IN')}</span>
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[11px] font-bold text-orange-500 uppercase tracking-widest mb-1">Balance</span>
@@ -655,26 +896,26 @@ function ClientDetailPage() {
               <form id="deal-form" onSubmit={handleSaveDeal} className="p-5 space-y-5">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-bold text-muted-foreground uppercase">Description / Title</Label>
-                  <Input className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealProject} onChange={e => setDealProject(e.target.value)} required placeholder="e.g. Monthly Retainer" />
+                  <Input className="h-10 border-primary/20 focus-visible:ring-primary" value={dealProject} onChange={e => setDealProject(e.target.value)} required placeholder="e.g., Retainer, Project Fee, Consultation" />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold text-muted-foreground uppercase">Total Amount</Label>
-                    <Input type="number" className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealAmount || ""} onChange={e => setDealAmount(Number(e.target.value) || 0)} required />
+                    <Input type="number" className="h-10 border-primary/20 focus-visible:ring-primary" value={dealAmount || ""} onChange={e => setDealAmount(Number(e.target.value) || 0)} required />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold text-muted-foreground uppercase">Advance Paid</Label>
-                    <Input type="number" className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealAdvance || ""} onChange={e => setDealAdvance(Number(e.target.value) || 0)} />
+                    <Input type="number" className="h-10 border-primary/20 focus-visible:ring-primary" value={dealAdvance || ""} onChange={e => setDealAdvance(Number(e.target.value) || 0)} />
                   </div>
-                  <div className="space-y-1.5">
+                      <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold text-muted-foreground uppercase">Date</Label>
-                    <Input type="date" className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealDate} onChange={e => setDealDate(e.target.value)} />
+                    <Input type="date" className="h-10 border-primary/20 focus-visible:ring-primary" value={dealDate} onChange={e => setDealDate(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold text-muted-foreground uppercase">Method</Label>
                     <Select value={dealMethod} onValueChange={setDealMethod}>
-                      <SelectTrigger className="h-10 border-emerald-100 focus-visible:ring-emerald-500">
+                      <SelectTrigger className="h-10 border-primary/20 focus-visible:ring-primary">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -689,7 +930,7 @@ function ClientDetailPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-bold text-muted-foreground uppercase">Note (Optional)</Label>
-                  <Input className="h-10 border-emerald-100 focus-visible:ring-emerald-500" value={dealNote} onChange={e => setDealNote(e.target.value)} placeholder="Ref / remark" />
+                  <Input className="h-10 border-primary/20 focus-visible:ring-primary" value={dealNote} onChange={e => setDealNote(e.target.value)} placeholder="Ref / remark" />
                 </div>
 
                 <div className="flex gap-3 justify-end pt-2">

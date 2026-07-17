@@ -21,7 +21,7 @@ export const Route = createFileRoute("/clients")({
 });
 
 const STATUS_TONE: Record<string, string> = {
-  Active: "bg-emerald-50 text-emerald-600",
+  Active: "bg-primary/10 text-primary",
   Inactive: "bg-muted text-muted-foreground",
 };
 
@@ -73,6 +73,7 @@ function ClientsPage() {
   const [status, setStatus] = useState("Planning");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [teamAssignments, setTeamAssignments] = useState<Record<string, string>>({});
+  const [billingDate, setBillingDate] = useState<number | "">("");
   const [addManagerOpen, setAddManagerOpen] = useState<string | null>(null);
 
   // ── Edit state ──
@@ -83,6 +84,7 @@ function ClientsPage() {
   const [editStatus, setEditStatus] = useState("Planning");
   const [editPlatforms, setEditPlatforms] = useState<string[]>([]);
   const [editTeamAssignments, setEditTeamAssignments] = useState<Record<string, string>>({});
+  const [editBillingDate, setEditBillingDate] = useState<number | "">("");
   const [editManagerOpen, setEditManagerOpen] = useState<string | null>(null);
 
   // ── Delete state ──
@@ -94,8 +96,8 @@ function ClientsPage() {
   const [isClosing, setIsClosing] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All Statuses");
-  const [platformFilter, setPlatformFilter] = useState("All Platforms");
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [platformFilters, setPlatformFilters] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("newest");
   const [isInitializing, setIsInitializing] = useState<string | null>(null);
 
@@ -128,11 +130,12 @@ function ClientsPage() {
       platforms: selectedPlatforms,
       status,
       team_assignments: teamAssignments,
+      billing_date: billingDate || null,
     }, {
       onSuccess: () => {
         toast.success("Client added successfully!");
         setIsAddOpen(false);
-        setName(""); setEmail(""); setIndustry(""); setSelectedPlatforms([]); setStatus("Planning"); setTeamAssignments({});
+        setName(""); setEmail(""); setIndustry(""); setSelectedPlatforms([]); setStatus("Planning"); setTeamAssignments({}); setBillingDate("");
       },
       onError: (err) => toast.error(err.message),
     });
@@ -144,8 +147,9 @@ function ClientsPage() {
     setEditEmail(c.email ?? "");
     setEditIndustry(c.industry ?? "");
     setEditStatus(c.status);
-    setEditPlatforms(c.platforms ?? []);
+    setEditPlatforms(c.platforms || []);
     setEditTeamAssignments(c.team_assignments || {});
+    setEditBillingDate(c.billing_date || "");
   };
 
   const handleUpdateClient = (e: React.FormEvent) => {
@@ -162,9 +166,10 @@ function ClientsPage() {
         name: editName,
         email: editEmail || null,
         industry: editIndustry || null,
-        platforms: editPlatforms,
         status: editStatus,
+        platforms: editPlatforms,
         team_assignments: editTeamAssignments,
+        billing_date: editBillingDate || null,
       },
     }, {
       onSuccess: () => {
@@ -222,18 +227,21 @@ function ClientsPage() {
     const isInactive = c.status === "Closed" || c.status === "Inactive";
     const mappedStatus = isInactive ? "Inactive" : "Active";
     
-    if (statusFilter !== "All Statuses" && mappedStatus !== statusFilter) return false;
+    if (statusFilters.length > 0 && !statusFilters.includes(mappedStatus)) return false;
 
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesPlatform = platformFilter === "All Platforms" || (c.platforms && c.platforms.includes(platformFilter));
+    
+    const matchesPlatform = platformFilters.length === 0 || 
+      (c.platforms && c.platforms.some(p => platformFilters.includes(p)));
+    
     return matchesSearch && matchesPlatform;
   });
 
   const accessibleMembers = isEmployee ? [] : members;
   const filteredMembers = accessibleMembers.filter(m => {
     if (m.role !== "client") return false;
-    if (statusFilter !== "All Statuses" && statusFilter !== "Active") return false;
+    if (statusFilters.length > 0 && !statusFilters.includes("Active")) return false;
     const n = m.users?.full_name || m.users?.email?.split("@")[0] || "";
     const matchesSearch = n.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (m.users?.email && m.users.email.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -307,21 +315,33 @@ function ClientsPage() {
     }
   };
 
+  // ── stats ──
+  // Rule: Active = any status that is NOT Closed/Inactive
+  const totalClients = accessibleClients.length;
+  const activeClients = accessibleClients.filter(c => c.status !== "Closed" && c.status !== "Inactive").length;
+  const closedClients = accessibleClients.filter(c => c.status === "Closed" || c.status === "Inactive").length;
+
+  // generate short client ID from UUID
+  function clientCode(id: string) {
+    return "CL-" + id.replace(/-/g, "").slice(0, 8).toUpperCase();
+  }
+
   return (
     <AppShell
-      title="Client Management"
-      subtitle="All active and onboarding accounts across the agency."
+      title=""
+      subtitle=""
       actions={
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button className="rounded-xl h-10" disabled={!workspace || workspace.role === 'client'}>
-              <Plus className="h-4 w-4 mr-2" /> Add Client
+              <Plus className="h-4 w-4 mr-2" /> New Client
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[450px]">
             <DialogHeader>
               <DialogTitle>Add New Client</DialogTitle>
             </DialogHeader>
+
             <form onSubmit={handleCreateClient} className="space-y-4 pt-4">
               <div className="space-y-2">
                 <Label>Client Name *</Label>
@@ -333,7 +353,11 @@ function ClientsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Industry</Label>
-                <Input value={industry} onChange={e => setIndustry(e.target.value)} placeholder="e.g. Technology" />
+                <Input value={industry} onChange={e => setIndustry(e.target.value)} placeholder="e.g. Health & Wellness" />
+              </div>
+              <div className="space-y-2">
+                <Label>Billing Date (Day of month)</Label>
+                <Input type="number" min="1" max="31" value={billingDate} onChange={e => setBillingDate(Number(e.target.value) || "")} placeholder="e.g. 5 for 5th of every month" />
               </div>
               <div className="space-y-2">
                 <Label>Active Platforms</Label>
@@ -344,10 +368,10 @@ function ClientsPage() {
                       <Badge
                         key={p}
                         variant="outline"
-                        className={`cursor-pointer px-3 py-1 ${isSelected ? "border-primary bg-primary/10 text-primary" : ""}`}
+                        className={`cursor-pointer px-3 py-1 ${isSelected ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
                         onClick={() => togglePlatform(p, selectedPlatforms, setSelectedPlatforms)}
                       >
-                        {isSelected && <Check className="w-3 h-3 mr-1" />}
+                        {isSelected && <Check className="w-3 h-3 mr-1 text-primary-foreground" />}
                         {p}
                       </Badge>
                     );
@@ -461,7 +485,11 @@ function ClientsPage() {
             </div>
             <div className="space-y-2">
               <Label>Industry</Label>
-              <Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} placeholder="e.g. Technology" />
+              <Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Billing Date (Day of month)</Label>
+              <Input type="number" min="1" max="31" value={editBillingDate} onChange={e => setEditBillingDate(Number(e.target.value) || "")} placeholder="e.g. 5 for 5th of every month" />
             </div>
             <div className="space-y-2">
               <Label>Active Platforms</Label>
@@ -472,10 +500,10 @@ function ClientsPage() {
                     <Badge
                       key={p}
                       variant="outline"
-                      className={`cursor-pointer px-3 py-1 ${isSelected ? "border-primary bg-primary/10 text-primary" : ""}`}
+                      className={`cursor-pointer px-3 py-1 ${isSelected ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
                       onClick={() => togglePlatform(p, editPlatforms, setEditPlatforms)}
                     >
-                      {isSelected && <Check className="w-3 h-3 mr-1" />}
+                      {isSelected && <Check className="w-3 h-3 mr-1 text-primary-foreground" />}
                       {p}
                     </Badge>
                   );
@@ -592,207 +620,217 @@ function ClientsPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="card-soft p-4 sm:p-5">
-        {/* Filter bar */}
-        <div className="flex flex-col gap-2 mb-4">
-          {/* Search — full width on mobile */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search clients..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9 h-10 rounded-xl bg-muted/50 border-transparent"
-            />
-          </div>
-          {/* Filters — horizontal scroll row on mobile */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-[140px] h-10 rounded-xl bg-background shrink-0">
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">Sort By</span>
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newest">Newest First</SelectItem>
-                <SelectItem value="oldest">Oldest First</SelectItem>
-                <SelectItem value="name_asc">Name (A-Z)</SelectItem>
-                <SelectItem value="name_desc">Name (Z-A)</SelectItem>
-                <SelectItem value="revenue_desc">Revenue (High - Low)</SelectItem>
-                <SelectItem value="revenue_asc">Revenue (Low - High)</SelectItem>
-                <SelectItem value="pending_desc">Pending Amt (High - Low)</SelectItem>
-                <SelectItem value="advance_desc">Advance Paid (High - Low)</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background shrink-0">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All Statuses">All Statuses</SelectItem>
-                {Object.keys(STATUS_TONE).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={platformFilter} onValueChange={setPlatformFilter}>
-              <SelectTrigger className="w-[150px] h-10 rounded-xl bg-background shrink-0">
-                <SelectValue placeholder="All Platforms" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All Platforms">All Platforms</SelectItem>
-                {PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+      {/* ── Page header ── */}
+      <div className="mb-6">
+        <p className="text-[11px] font-bold tracking-widest text-primary uppercase mb-1">Delivery · Clients</p>
+        <h1 className="text-3xl font-bold text-foreground tracking-tight">Client Management</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Signed clients, the services we deliver, fees and engagement timelines.</p>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {isLoading ? (
-            <div className="col-span-full py-20 flex justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <>
-              {filteredClients.length === 0 && filteredMembers.length === 0 ? (
-                <div className="col-span-full text-center py-20 text-muted-foreground">
-                  No clients found. Click 'Add Client' to add your first one!
-                </div>
-              ) : (
-                <>
-                  {sortedClients.map((c) => {
+      {/* ── Stat cards ── */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {/* Total */}
+        <div
+          onClick={() => setStatusFilters([])}
+          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md ${statusFilters.length === 0 ? "border-foreground/40 ring-2 ring-foreground/10" : "border-border"}`}
+        >
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Total Clients</p>
+          <p className="text-4xl font-bold text-foreground">{totalClients}</p>
+        </div>
+        {/* Active */}
+        <div
+          onClick={() => setStatusFilters(["Active"])}
+          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md ${statusFilters.length === 1 && statusFilters.includes("Active") ? "border-primary ring-2 ring-primary/20" : "border-border"}`}
+        >
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Active</p>
+          <p className="text-4xl font-bold text-primary">{activeClients}</p>
+        </div>
+        {/* Inactive */}
+        <div
+          onClick={() => setStatusFilters(["Inactive"])}
+          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md ${statusFilters.length === 1 && statusFilters.includes("Inactive") ? "border-slate-400 ring-2 ring-slate-100" : "border-border"}`}
+        >
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Inactive</p>
+          <p className="text-4xl font-bold text-muted-foreground">{closedClients}</p>
+        </div>
+      </div>
+
+
+      {/* ── Filter bar ── */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search name or company..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="pl-9 h-10 rounded-xl bg-white border-border"
+          />
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={`h-10 rounded-xl font-normal ${statusFilters.length > 0 ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90" : "bg-white border-border text-muted-foreground"}`}>
+                <span className={statusFilters.length > 0 ? "text-primary-foreground" : "text-foreground"}>{statusFilters.length > 0 ? `Status (${statusFilters.length})` : "All statuses"}</span>
+                <ChevronsUpDown className={`ml-2 h-4 w-4 shrink-0 ${statusFilters.length > 0 ? "opacity-100" : "opacity-50"}`} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-2" align="start">
+              <div className="space-y-1">
+                {["Active", "Inactive"].map(s => (
+                  <div key={s} className={`flex items-center space-x-2 p-1.5 rounded-md cursor-pointer ${statusFilters.includes(s) ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"}`} onClick={() => setStatusFilters(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}>
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${statusFilters.includes(s) ? "border-primary-foreground text-primary-foreground" : "border-input"}`}>
+                      {statusFilters.includes(s) && <Check className="w-3 h-3" />}
+                    </div>
+                    <span className="text-sm">{s}</span>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={`h-10 rounded-xl font-normal ${platformFilters.length > 0 ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90" : "bg-white border-border text-muted-foreground"}`}>
+                <span className={platformFilters.length > 0 ? "text-primary-foreground" : "text-foreground"}>{platformFilters.length > 0 ? `Services (${platformFilters.length})` : "All services"}</span>
+                <ChevronsUpDown className={`ml-2 h-4 w-4 shrink-0 ${platformFilters.length > 0 ? "opacity-100" : "opacity-50"}`} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-2" align="start">
+              <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                {PLATFORMS.map(p => (
+                  <div key={p} className={`flex items-center space-x-2 p-1.5 rounded-md cursor-pointer ${platformFilters.includes(p) ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"}`} onClick={() => setPlatformFilters(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}>
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${platformFilters.includes(p) ? "border-primary-foreground text-primary-foreground" : "border-input"}`}>
+                      {platformFilters.includes(p) && <Check className="w-3 h-3" />}
+                    </div>
+                    <span className="text-sm">{p}</span>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      {/* ── Client grid ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {isLoading ? (
+          <div className="col-span-full py-20 flex justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <>
+            {filteredClients.length === 0 && filteredMembers.length === 0 ? (
+              <div className="col-span-full text-center py-20 text-muted-foreground">
+                No clients found. Click 'New Client' to add your first one!
+              </div>
+            ) : (
+              <>
+                {sortedClients.map((c) => {
                   const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === c.name.toLowerCase());
                   const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
                   const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
                   const pendingPayment = totalRevenue - advancePaid;
-                  
+                  // Simple two-status rule: Closed or Inactive = inactive; everything else = active
+                  const isInactive = c.status === "Closed" || c.status === "Inactive";
+
                   return (
-                    <div 
-                      key={c.id} 
+                    <div
+                      key={c.id}
                       onClick={() => navigate({ to: '/clients/$clientId', params: { clientId: c.id } })}
-                      className="relative rounded-2xl border border-border bg-[#F9FAFB]/50 p-5 shadow-sm hover:shadow-md transition-all flex flex-col h-full overflow-hidden cursor-pointer group"
+                      className="relative rounded-2xl border border-border bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col gap-3"
                     >
-                      {/* Active/Inactive Badge */}
-                      <div className="absolute top-5 right-5">
-                        <Badge className={`rounded-sm font-bold tracking-wider text-[10px] px-2 py-0.5 border-0 ${c.status === 'Closed' ? 'bg-muted text-muted-foreground' : 'bg-emerald-50 text-emerald-600'}`}>
-                          {c.status === 'Closed' ? 'INACTIVE' : 'ACTIVE'}
-                        </Badge>
-                      </div>
-
-                      <div className="mb-4 pr-16">
-                        <span className="font-bold text-[17px] truncate block group-hover:text-primary transition-colors text-[#1C1917]">
-                          {c.name}
+                      {/* Status badge */}
+                      <div className="flex items-start justify-between">
+                        <div className={`h-10 w-10 rounded-xl grid place-items-center shrink-0 ${isInactive ? "bg-muted" : "bg-primary"}`}>
+                          <Users className={`h-5 w-5 ${isInactive ? "text-muted-foreground" : "text-primary-foreground"}`} />
+                        </div>
+                        <span className={`text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-sm ${
+                          isInactive ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"
+                        }`}>
+                          {isInactive ? "INACTIVE" : "ACTIVE"}
                         </span>
-                        <div className="text-xs text-muted-foreground truncate font-medium mt-0.5">{c.industry || "No industry"}</div>
                       </div>
 
-                      <div className="flex flex-col gap-2 flex-1 mt-3">
-                        {workspace?.role !== "employee" && (
-                          <>
-                            <div className="flex justify-between text-[13px]">
-                              <span className="text-muted-foreground font-medium flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Total revenue</span>
-                              <span className="font-bold text-emerald-600 flex items-center"><IndianRupee className="w-3 h-3" />{totalRevenue.toLocaleString("en-IN")}</span>
-                            </div>
-                            <div className="flex justify-between text-[13px]">
-                              <span className="text-muted-foreground font-medium flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Advance Paid</span>
-                              <span className="font-bold text-foreground flex items-center"><IndianRupee className="w-3 h-3" />{advancePaid.toLocaleString("en-IN")}</span>
-                            </div>
-                            <div className="flex justify-between text-[13px]">
-                              <span className="text-muted-foreground font-medium flex items-center gap-1.5"><AlertOctagon className="w-3.5 h-3.5" /> Outstanding</span>
-                              <span className="font-bold text-rose-500 flex items-center"><IndianRupee className="w-3 h-3" />{pendingPayment.toLocaleString("en-IN")}</span>
-                            </div>
-                          </>
-                        )}
-                        <div className={`flex justify-between text-[13px] ${workspace?.role !== 'employee' ? 'mt-1 border-t border-border/60 pt-2.5' : ''}`}>
-                          <span className="text-muted-foreground font-medium flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Start</span>
-                          <span className="font-semibold text-foreground">{new Date(c.created_at).toLocaleDateString("en-GB", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                        </div>
+                      {/* Client ID + name */}
+                      <div>
+                        <p className="text-[11px] text-muted-foreground font-mono font-medium">{clientCode(c.id)}</p>
+                        <p className="text-[17px] font-bold text-foreground group-hover:text-primary transition-colors leading-tight mt-0.5 truncate">{c.name}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{c.industry || c.email || "—"}</p>
                       </div>
 
-                      <div className="mt-5 pt-4 border-t border-border/60 flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Allocated Manager</span>
-                          {(() => {
-                            const managerId = c.team_assignments?.["Account/Social Media Manager"];
-                            const member = managerId ? members.find(m => m.user_id === managerId) : null;
-                            const n = member ? (member.users?.full_name || member.users?.email?.split("@")[0] || "Unknown") : "Unassigned";
-                            return <span className="text-xs font-semibold text-foreground truncate max-w-[140px] text-right">{n}</span>;
-                          })()}
-                        </div>
-                        <div className="flex items-center justify-between pb-1">
-                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Platforms</span>
-                          <div className="flex -space-x-1">
-                            {c.platforms?.map((p) => (
-                              <span key={p} title={p} className="h-6 w-6 rounded-full ring-2 ring-[#F9FAFB] grid place-items-center text-white shadow-sm" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || '#666' }}>
-                                {getPlatformIcon(p)}
-                              </span>
-                            ))}
-                            {(!c.platforms || c.platforms.length === 0) && <span className="text-muted-foreground text-xs">-</span>}
+                      {/* Financials — admin/owner only */}
+                      {workspace?.role !== "employee" && (
+                        <div className="border-t border-border/60 pt-3 flex flex-col gap-1.5">
+                          <div className="flex justify-between text-[13px]">
+                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Revenue</span>
+                            <span className="font-bold text-primary flex items-center"><IndianRupee className="w-3 h-3" />{totalRevenue.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="flex justify-between text-[13px]">
+                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Advance</span>
+                            <span className="font-bold text-foreground flex items-center"><IndianRupee className="w-3 h-3" />{advancePaid.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="flex justify-between text-[13px]">
+                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><AlertOctagon className="w-3.5 h-3.5" /> Outstanding</span>
+                            <span className={`font-bold flex items-center ${pendingPayment > 0 ? "text-rose-500" : "text-foreground"}`}><IndianRupee className="w-3 h-3" />{pendingPayment.toLocaleString("en-IN")}</span>
                           </div>
                         </div>
-                        <div className="flex items-center justify-end gap-1 opacity-40 hover:opacity-100 transition-opacity mt-2 pt-3 border-t border-border/40">
-                          <button disabled={!isAdmin} onClick={(e) => { e.stopPropagation(); openEdit(c); }} className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted inline-grid place-items-center transition-colors">
+                      )}
+
+                      {/* Platforms + actions */}
+                      <div className="border-t border-border/60 pt-3 flex items-center justify-between">
+                        <div className="flex -space-x-1">
+                          {c.platforms?.slice(0, 4).map((p) => (
+                            <span key={p} title={p} className="h-6 w-6 rounded-full ring-2 ring-white grid place-items-center text-white shadow-sm text-[10px]" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || '#6b7280' }}>
+                              {getPlatformIcon(p)}
+                            </span>
+                          ))}
+                          {(!c.platforms || c.platforms.length === 0) && <span className="text-muted-foreground text-xs">—</span>}
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button disabled={!isAdmin} onClick={(e) => { e.stopPropagation(); openEdit(c); }} className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted inline-grid place-items-center">
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
-                          <button disabled={!isAdmin} onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }} className="h-7 w-7 rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-500 inline-grid place-items-center transition-colors">
+                          <button disabled={!isAdmin} onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }} className="h-7 w-7 rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-500 inline-grid place-items-center">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>
                     </div>
                   );
-                  })}
-                  {sortedMembers.map((m) => {
-                    const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
-                    return (
-                      <div 
-                        key={m.user_id}
-                        onClick={() => handleInitializeWorkspaceClient(m)}
-                        className={`relative rounded-2xl border border-border bg-[#F9FAFB]/50 p-5 shadow-sm hover:shadow-md transition-all flex flex-col h-full overflow-hidden cursor-pointer group ${isInitializing === m.user_id ? 'opacity-50 pointer-events-none' : ''}`}
-                      >
-                        <div className="absolute top-5 right-5">
-                          <Badge className="rounded-sm font-bold tracking-wider text-[10px] px-2 py-0.5 border-0 bg-emerald-50 text-emerald-600">
-                            WORKSPACE CLIENT
-                          </Badge>
+                })}
+
+                {sortedMembers.map((m) => {
+                  const n = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                  return (
+                    <div
+                      key={m.user_id}
+                      onClick={() => handleInitializeWorkspaceClient(m)}
+                      className={`relative rounded-2xl border border-dashed border-border bg-white p-5 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col gap-3 ${isInitializing === m.user_id ? 'opacity-50 pointer-events-none' : ''}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="h-10 w-10 rounded-xl bg-blue-50 grid place-items-center shrink-0">
+                          <Users className="h-5 w-5 text-blue-500" />
                         </div>
-                        <div className="mb-4 pr-16">
-                          <span className="font-bold text-[17px] truncate block group-hover:text-primary transition-colors text-[#1C1917]">
-                            {n}
-                          </span>
-                          <div className="text-xs text-muted-foreground truncate font-medium mt-0.5">{m.users?.email || "No email"}</div>
-                        </div>
-                        <div className="flex flex-col gap-2 flex-1 mt-3 opacity-60 pointer-events-none">
-                          <div className="flex justify-between text-[13px]">
-                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Total revenue</span>
-                            <span className="font-bold text-emerald-600 flex items-center"><IndianRupee className="w-3 h-3" />0</span>
-                          </div>
-                          <div className="flex justify-between text-[13px]">
-                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Advance Paid</span>
-                            <span className="font-bold text-foreground flex items-center"><IndianRupee className="w-3 h-3" />0</span>
-                          </div>
-                          <div className="flex justify-between text-[13px]">
-                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><AlertOctagon className="w-3.5 h-3.5" /> Outstanding</span>
-                            <span className="font-bold text-rose-500 flex items-center"><IndianRupee className="w-3 h-3" />0</span>
-                          </div>
-                          <div className="flex justify-between text-[13px] mt-1 border-t border-border/60 pt-2.5">
-                            <span className="text-muted-foreground font-medium flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Start</span>
-                            <span className="font-semibold text-foreground">{new Date(m.created_at).toLocaleDateString("en-GB", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                          </div>
-                        </div>
-                        <div className="mt-4 text-center text-[10px] font-bold text-primary uppercase tracking-widest border-t border-border/60 pt-3 group-hover:bg-primary/5 rounded-b-xl -mx-5 -mb-5 pb-5 transition-colors">
-                          {isInitializing === m.user_id ? (
-                            <span className="flex items-center justify-center gap-2"><Loader2 className="w-3 h-3 animate-spin"/> INITIALIZING...</span>
-                          ) : (
-                            "CLICK TO SETUP CRM PROFILE"
-                          )}
-                        </div>
+                        <span className="text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-sm bg-blue-50 text-blue-600">SETUP</span>
                       </div>
-                    );
-                  })}
-                </>
-              )}
-            </>
-          )}
-        </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground font-mono font-medium">WORKSPACE CLIENT</p>
+                        <p className="text-[17px] font-bold text-foreground leading-tight mt-0.5 truncate">{n}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{m.users?.email || "No email"}</p>
+                      </div>
+                      <div className="mt-auto text-center text-[10px] font-bold text-primary uppercase tracking-widest border-t border-border/60 pt-3">
+                        {isInitializing === m.user_id ? (
+                          <span className="flex items-center justify-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Setting up...</span>
+                        ) : "Click to setup CRM profile"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </>
+        )}
       </div>
 
       {/* Close Client Dialog */}

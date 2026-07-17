@@ -134,6 +134,11 @@ function PlatformMultiSelect({ value, onChange, disabled }: { value: string[]; o
 }
 
 export const Route = createFileRoute("/tasks")({
+  validateSearch: (search: Record<string, unknown>): { client?: string } => {
+    return {
+      client: search.client as string | undefined,
+    }
+  },
   head: () => ({ meta: [{ title: "Tasks & Content Sheet — SocialNxt" }] }),
   component: TasksPage,
 });
@@ -150,6 +155,7 @@ function TasksPage() {
   const queryClient = useQueryClient();
   const [newlyAddedPostId, setNewlyAddedPostId] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const handleUndo = async () => {
     if (!undoAction) return;
@@ -163,17 +169,28 @@ function TasksPage() {
   };
 
   useEffect(() => {
-    if (newlyAddedPostId) {
-      const row = document.getElementById(`post-row-${newlyAddedPostId}`);
-      if (row) {
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        row.style.transition = 'background-color 0.5s';
-        row.style.backgroundColor = '#f3e8ff'; // highlight color
-        setTimeout(() => {
-          row.style.backgroundColor = '';
-        }, 1500);
-        setNewlyAddedPostId(null);
-      }
+    const params = new URLSearchParams(window.location.search);
+    const highlightId = newlyAddedPostId || params.get("highlight");
+    
+    if (highlightId && posts.length > 0) {
+      setTimeout(() => {
+        const row = document.getElementById(`post-row-${highlightId}`);
+        if (row) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          row.style.transition = 'background-color 0.5s';
+          row.style.backgroundColor = '#f3e8ff'; // highlight color
+          setTimeout(() => {
+            row.style.backgroundColor = '';
+          }, 1500);
+          setNewlyAddedPostId(null);
+          
+          if (params.has("highlight")) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("highlight");
+            window.history.replaceState({}, '', url.toString());
+          }
+        }
+      }, 500);
     }
   }, [posts, newlyAddedPostId]);
 
@@ -227,18 +244,48 @@ function TasksPage() {
   const [customDateFrom, setCustomDateFrom] = useState<string>("");
   const [customDateTo, setCustomDateTo] = useState<string>("");
 
+  const [customColumns, setCustomColumns] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`socialnxt_custom_cols_${workspace?.workspaceId || 'default'}`) || "[]"); } catch { return []; }
+  });
+
+  const handleAddColumn = () => {
+    const name = prompt("Enter new column name:");
+    if (!name || customColumns.includes(name)) return;
+    const newCols = [...customColumns, name];
+    setCustomColumns(newCols);
+    localStorage.setItem(`socialnxt_custom_cols_${workspace?.workspaceId || 'default'}`, JSON.stringify(newCols));
+    toast.success(`Column "${name}" added`);
+  };
+
+  const handleDeleteColumn = (name: string) => {
+    if (!confirm(`Are you sure you want to delete the column "${name}"?`)) return;
+    const newCols = customColumns.filter(c => c !== name);
+    setCustomColumns(newCols);
+    localStorage.setItem(`socialnxt_custom_cols_${workspace?.workspaceId || 'default'}`, JSON.stringify(newCols));
+    toast.success(`Column "${name}" deleted`);
+  };
+
   const handleAddRow = () => {
     if (!workspace) return;
+    
+    const selectedClientObj = selectedClientFilter !== "All Clients" 
+      ? clients.find(c => c.name === selectedClientFilter) 
+      : null;
+    const initialPlatforms = selectedPlatformFilter !== "All Platforms" 
+      ? [selectedPlatformFilter] 
+      : (selectedClientObj?.platforms || []);
+
     createPost.mutate({
       workspace_id: workspace.workspaceId,
       author_id: workspace.userId,
       status: "draft",
-      scheduled_for: new Date().toISOString(),
+      scheduled_for: selectedDateFilter === "Custom Date" && customDateFrom ? new Date(customDateFrom).toISOString() : new Date().toISOString(),
       content: "",
       topic: "",
       content_type: "",
       client_name: selectedClientFilter !== "All Clients" ? selectedClientFilter : "",
-      platform: selectedPlatformFilter !== "All Platforms" ? selectedPlatformFilter : undefined,
+      platform: undefined,
+      platforms: initialPlatforms,
     }, {
       onSuccess: (data) => {
         toast.success("Added new row!");
@@ -386,13 +433,16 @@ function TasksPage() {
 
   const handleExportCSV = () => {
     if (sortedPosts.length === 0) return toast.info("No data to export");
-    const headers = "Client,Platform,Content Type,Topic,Assigned To,Status,Schedule\n";
+    const headers = "Client,Platform,Content Type,Topic,Caption,Reference Content,Completed Content,Assigned To,Status,Schedule\n";
     const csv = sortedPosts.map(p => {
       const assigned = members.filter(m => Array.isArray(p.assigned_to) && p.assigned_to.includes(m.user_id))
         .map(m => m.users?.full_name || m.users?.email?.split('@')[0] || 'Unknown').join('; ');
       const platforms = p.platform || (p.platforms ? p.platforms.join('; ') : '');
       const schedule = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : '';
-      return `"${p.client_name || ''}","${platforms}","${p.content_type || ''}","${p.topic || ''}","${assigned}","${p.status}","${schedule}"`;
+      const caption = p.content ? p.content.replace(/"/g, '""').replace(/\n/g, ' ') : '';
+      const reference = p.reference_content ? p.reference_content.join('; ') : '';
+      const completed = p.completed_work ? p.completed_work.join('; ') : '';
+      return `"${p.client_name || ''}","${platforms}","${p.content_type || ''}","${p.topic ? p.topic.replace(/"/g, '""') : ''}","${caption}","${reference}","${completed}","${assigned}","${p.status}","${schedule}"`;
     }).join("\n");
     const blob = new Blob([headers + csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -483,7 +533,7 @@ function TasksPage() {
               </SelectContent>
             </Select>
           </div>
-          {!isClient && (
+          {!isClient && !showAdminDetails && (
             <div className="w-36 sm:w-48">
               <Select value={selectedClientFilter} onValueChange={(v) => { setSelectedClientFilter(v); setPage(0); }}>
                 <SelectTrigger className="h-10 rounded-xl bg-white border-input text-xs sm:text-sm">
@@ -543,25 +593,33 @@ function TasksPage() {
           <div className="py-20 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+            <table className="w-full text-sm text-left border-collapse min-w-[1200px]" style={{ tableLayout: "fixed" }}>
               <thead className="bg-primary text-white">
                 <tr>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-24">DATE</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-24">WEEK DAY</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold min-w-[160px]">CLIENT</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold min-w-[140px]">PLATFORM</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-32">CONTENT TYPE</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-48">TOPIC</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-64">REFERENCE CONTENT</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold min-w-[200px]">COMPLETED CONTENT</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-40">ASSIGNED TO</th>
-                  <th className="px-4 py-3 border-r border-white/20 font-semibold w-40">SCHEDULED TIME</th>
-                  <th className="px-4 py-3 font-semibold w-32 text-center">STATUS</th>
+                  <ResizableHeader label="DATE" defaultWidth={96} />
+                  <ResizableHeader label="WEEK DAY" defaultWidth={96} />
+                  <ResizableHeader label="CLIENT" defaultWidth={160} />
+                  <ResizableHeader label="PLATFORM" defaultWidth={140} />
+                  <ResizableHeader label="CONTENT TYPE" defaultWidth={128} />
+                  <ResizableHeader label="TOPIC" defaultWidth={192} />
+                  <ResizableHeader label="REFERENCE CONTENT" defaultWidth={256} />
+                  <ResizableHeader label="COMPLETED CONTENT" defaultWidth={256} />
+                  <ResizableHeader label="ASSIGNED TO" defaultWidth={160} />
+                  <ResizableHeader label="SCHEDULED TIME" defaultWidth={160} />
+                  <ResizableHeader label="STATUS" defaultWidth={128} className="text-center" />
+                  {customColumns.map(col => <ResizableHeader key={col} label={col.toUpperCase()} defaultWidth={160} onDelete={() => handleDeleteColumn(col)} />)}
+                  <th className="px-4 py-3 border-l border-white/20 font-semibold w-16 text-center align-middle">
+                    <button 
+                      onClick={handleAddColumn} 
+                      className="hover:bg-white/20 p-1.5 rounded-md text-xl leading-none transition-colors"
+                      title="Add Custom Column"
+                    >+</button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {pagedPosts.map((post, idx) => (
-                  <TaskRow key={post.id} post={post} index={safePage * PAGE_SIZE + idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} />
+                  <TaskRow key={post.id} post={post} index={safePage * PAGE_SIZE + idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} selectedClientFilter={selectedClientFilter} customColumns={customColumns} setLightboxImage={setLightboxImage} />
                 ))}
                 {sortedPosts.length === 0 && (
                   <tr>
@@ -588,12 +646,93 @@ function TasksPage() {
           </div>
         )}
       </div>
+      
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center p-4 cursor-zoom-out backdrop-blur-sm"
+          onClick={() => setLightboxImage(null)}
+        >
+          <img src={lightboxImage} alt="Fullscreen preview" className="max-w-[90vw] max-h-[90vh] rounded shadow-2xl object-contain animate-in fade-in zoom-in duration-200" />
+          <button 
+            className="absolute top-6 right-6 text-white bg-black/50 hover:bg-black p-2 rounded-full transition-colors cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); setLightboxImage(null); }}
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+      )}
     </AppShell>
   );
 }
 
+function ResizableHeader({ label, defaultWidth, className = "", onDelete }: { label: string; defaultWidth: number; className?: string; onDelete?: () => void }) {
+  const [width, setWidth] = useState(defaultWidth);
+  const [isResizing, setIsResizing] = useState(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    startX.current = e.pageX;
+    startWidth.current = width;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const onMouseMove = (e: MouseEvent) => {
+      setWidth(Math.max(60, startWidth.current + (e.pageX - startX.current)));
+    };
+    const onMouseUp = () => setIsResizing(false);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [isResizing]);
+
+  return (
+    <th className={`relative px-4 py-3 border-r border-white/20 font-semibold group ${className}`} style={{ width, minWidth: width, maxWidth: width }}>
+      <div className="flex items-center justify-between">
+        <span>{label}</span>
+        {onDelete && (
+          <button 
+            onClick={onDelete} 
+            className="text-white/50 hover:text-white/100 hover:bg-white/20 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Delete Column"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        )}
+      </div>
+      <div 
+        onMouseDown={onMouseDown}
+        className={`absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-white/30 ${isResizing ? 'bg-white/50' : ''}`}
+        title="Drag to resize column"
+      />
+    </th>
+  );
+}
+
 // Separate component for each row so they manage their own local edit state
-function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction }: { post: Post; index: number; isClient?: boolean; allClientNames: string[]; members: any[]; setUndoAction: (action: UndoAction) => void }) {
+function TaskRow({ post, index, isClient, allClientNames,
+  members,
+  setUndoAction,
+  selectedClientFilter,
+  customColumns,
+  setLightboxImage,
+}: {
+  post: Post;
+  index: number;
+  isClient: boolean;
+  allClientNames: string[];
+  members: any[];
+  setUndoAction: (action: any | null) => void;
+  selectedClientFilter: string;
+  customColumns: string[];
+  setLightboxImage: (url: string | null) => void;
+}) {
   const queryClient = useQueryClient();
   const { data: workspace } = useCurrentWorkspace();
   const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
@@ -658,7 +797,7 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
 
   // Helper to render media items (images or links)
   const renderMedia = (urls: string[] | null, target: "reference_content" | "completed_work") => {
-    if (!urls || urls.length === 0) return <div className="text-muted-foreground text-xs opacity-50 italic">Empty</div>;
+    if (!urls || urls.length === 0) return <div className="text-muted-foreground text-sm opacity-70 italic mb-2">No media added</div>;
     return (
       <div className="flex flex-wrap gap-2 mb-2">
         {urls.map((url, i) => {
@@ -686,9 +825,9 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
           if (isImage) {
             return (
               <div key={i} className="relative group w-16 h-16 rounded overflow-hidden border border-border shrink-0">
-                <a href={url} target="_blank" rel="noreferrer" className="block w-full h-full">
-                  <img src={url} alt="media" className="w-full h-full object-cover" />
-                </a>
+                <button type="button" onClick={() => setLightboxImage(url)} className="block w-full h-full cursor-zoom-in">
+                  <img src={url} alt="media" className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                </button>
                 <button
                   type="button"
                   onClick={handleDelete}
@@ -734,17 +873,23 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
       
       {/* CLIENT */}
       <td className="p-0 border-r border-gray-200 align-top bg-transparent">
-        <select
-          defaultValue={post.client_name || ""}
-          onChange={(e) => updatePost.mutate({ id: post.id, updates: { client_name: e.target.value } })}
-          disabled={isClient}
-          className="w-full px-3 py-3 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm cursor-pointer appearance-none disabled:opacity-50"
-        >
-          <option value="" disabled>Select Client</option>
-          {allClientNames.map((name) => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
+        {selectedClientFilter !== "All Clients" ? (
+          <div className="w-full px-3 py-3 text-sm h-[80px] flex items-start">
+            <span className="font-medium text-gray-700">{post.client_name || "—"}</span>
+          </div>
+        ) : (
+          <select
+            defaultValue={post.client_name || ""}
+            onChange={(e) => updatePost.mutate({ id: post.id, updates: { client_name: e.target.value } })}
+            disabled={isClient}
+            className="w-full px-3 py-3 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm cursor-pointer appearance-none disabled:opacity-50"
+          >
+            <option value="" disabled>Select Client</option>
+            {allClientNames.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        )}
       </td>
 
       {/* PLATFORM — multi-select */}
@@ -758,12 +903,27 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
 
       {/* CONTENT TYPE */}
       <td className="p-0 border-r border-gray-200 align-top">
-        <textarea
+        <select
           defaultValue={post.content_type || ""}
-          onBlur={(e) => handleTextBlur("content_type", e.target.value)}
-          className="w-full min-h-[80px] p-3 bg-transparent resize-none focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
-          placeholder="e.g. Reel"
-        />
+          onChange={(e) => updatePost.mutate({ id: post.id, updates: { content_type: e.target.value } })}
+          className="w-full p-3 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm cursor-pointer"
+        >
+          <option value="" disabled>Select Type</option>
+          {Array.from(new Set([
+            "Static Post",
+            "Reel",
+            "Carousel",
+            "Story",
+            "Video",
+            "Short",
+            "Thread",
+            "Live Stream",
+            "Other",
+            ...(post.content_type ? [post.content_type] : [])
+          ])).map(type => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
       </td>
 
       {/* TOPIC */}
@@ -771,7 +931,7 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
         <textarea
           defaultValue={post.topic || ""}
           onBlur={(e) => handleTextBlur("topic", e.target.value)}
-          className="w-full min-h-[80px] p-3 bg-transparent resize-none focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+          className="w-full min-h-[80px] p-3 bg-transparent resize-y focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
           placeholder="Enter topic..."
         />
       </td>
@@ -780,10 +940,10 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
       <td className="p-3 border-r border-gray-200 align-top">
         {renderMedia(post.reference_content, "reference_content")}
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 bg-white/50" onClick={() => handleAddLink("reference_content")}>
-            <LinkIcon className="w-3 h-3 mr-1" /> Add Link
+          <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => handleAddLink("reference_content")}>
+            <LinkIcon className="w-3.5 h-3.5 mr-1" /> Add Link
           </Button>
-          <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 bg-white/50" onClick={() => { setUploadingTarget("reference_content"); fileInputRef.current?.click(); }}>
+          <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => { setUploadingTarget("reference_content"); fileInputRef.current?.click(); }}>
             {uploadingTarget === "reference_content" ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImageIcon className="w-3 h-3 mr-1" />}
             Upload Image
           </Button>
@@ -800,16 +960,16 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
           <textarea
             defaultValue={post.content || ""}
             onBlur={(e) => handleTextBlur("content", e.target.value)}
-            className="w-full h-16 p-2 bg-white/60 border border-gray-300 rounded text-xs resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full h-16 p-2 bg-white/60 border border-gray-300 rounded text-xs resize-y focus:outline-none focus:ring-1 focus:ring-blue-500"
             placeholder="Final caption goes here..."
           />
         </div>
 
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 bg-white/50" onClick={() => handleAddLink("completed_work")}>
-            <LinkIcon className="w-3 h-3 mr-1" /> Add Link
+        <div className="flex gap-2 mt-3">
+          <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => handleAddLink("completed_work")}>
+            <LinkIcon className="w-3.5 h-3.5 mr-1" /> Add Link
           </Button>
-          <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 bg-white/50" onClick={() => { setUploadingTarget("completed_work"); fileInputRef.current?.click(); }}>
+          <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => { setUploadingTarget("completed_work"); fileInputRef.current?.click(); }}>
             {uploadingTarget === "completed_work" ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-1" />}
             Upload Final
           </Button>
@@ -861,7 +1021,11 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
           {!isClient && (
             <input
               type="datetime-local"
-              defaultValue={post.scheduled_for ? new Date(post.scheduled_for).toISOString().slice(0, 16) : ""}
+              defaultValue={post.scheduled_for ? (() => {
+                const d = new Date(post.scheduled_for);
+                const pad = (n: number) => n.toString().padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+              })() : ""}
               onChange={(e) => {
                 if (!e.target.value) return;
                 updatePost.mutate({ id: post.id, updates: { scheduled_for: new Date(e.target.value).toISOString() } });
@@ -1024,6 +1188,25 @@ function TaskRow({ post, index, isClient, allClientNames, members, setUndoAction
           </div>
         </div>
       </td>
+
+      {/* CUSTOM COLUMNS */}
+      {customColumns.map(col => (
+        <td key={col} className="p-2 border-r border-gray-200 align-top">
+          <textarea
+            defaultValue={(() => { try { return JSON.parse(localStorage.getItem(`socialnxt_custom_data_${post.id}`) || '{}')[col] || ''; } catch { return ''; } })()}
+            onBlur={(e) => {
+               try {
+                 const data = JSON.parse(localStorage.getItem(`socialnxt_custom_data_${post.id}`) || '{}');
+                 data[col] = e.target.value;
+                 localStorage.setItem(`socialnxt_custom_data_${post.id}`, JSON.stringify(data));
+               } catch(err) { console.error(err); }
+            }}
+            className="w-full min-h-[80px] p-3 bg-transparent rounded text-sm resize-y focus:outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder={`Enter ${col}...`}
+          />
+        </td>
+      ))}
+      <td className="p-0 border-r border-gray-200"></td>
 
       {/* Hidden file input for uploads */}
       <input 

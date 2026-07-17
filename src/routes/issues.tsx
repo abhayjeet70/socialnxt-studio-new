@@ -12,6 +12,11 @@ import { useCurrentWorkspace, useIssues, useCreateIssue, useUpdateIssueStatus, u
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/issues")({
+  validateSearch: (search: Record<string, unknown>): { client?: string } => {
+    return {
+      client: search.client as string | undefined,
+    }
+  },
   head: () => ({ meta: [{ title: "Client Issues — SocialNxt CRM" }] }),
   component: IssuesPage,
 });
@@ -26,6 +31,8 @@ const STATUS_TONE: Record<string, string> = {
   Open: "bg-[#EF4444]/10 text-[#B91C1C]",
   "In Progress": "bg-primary/10 text-primary",
   Resolved: "bg-[#10B981]/10 text-[#047857]",
+  Completed: "bg-[#10B981]/10 text-[#047857]",
+  Rejected: "bg-red-100 text-red-700",
 };
 
 const ISSUE_TYPES = ["New Work Request", "Bug / Problem", "Feedback"] as const;
@@ -103,14 +110,14 @@ function IssuesPage() {
     return true;
   });
 
-  const resolveClientName = (id: string): string | null => {
+  function resolveClientName(id: string): string | null {
     if (id === "none") return null;
     const c = activeClients.find((c) => c.id === id);
     if (c) return c.name;
     const m = clientMembers.find((m) => m.user_id === id);
     if (m) return m.users?.full_name || m.users?.email?.split("@")[0] || null;
     return null;
-  };
+  }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -301,7 +308,10 @@ function IssuesPage() {
                         </div>
                       </td>
                       {!isClient && (
-                        <td className="px-3 py-3 text-foreground/80">{raisedBy}</td>
+                        <td className="px-3 py-3 text-foreground/80">
+                          <div className="font-medium">{raisedBy}</div>
+                          {issue.client_name && <div className="text-[10px] text-primary uppercase tracking-widest mt-1">{issue.client_name}</div>}
+                        </td>
                       )}
                       <td className="px-3 py-3">
                         <Badge className="rounded-full border-0 bg-muted text-foreground/70">{issue.issue_type}</Badge>
@@ -310,7 +320,17 @@ function IssuesPage() {
                         <Badge className={`rounded-full border-0 ${PRIORITY_TONE[issue.priority]}`}>{issue.priority}</Badge>
                       </td>
                       <td className="px-3 py-3">
-                        <Badge className={`rounded-full border-0 ${STATUS_TONE[issue.status]}`}>{issue.status}</Badge>
+                        {!isClient ? (
+                          <select
+                            value={issue.status}
+                            onChange={(e) => handleStatusChange(issue, e.target.value)}
+                            className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none ${STATUS_TONE[issue.status] || "bg-gray-100 text-gray-800"}`}
+                          >
+                            {["Open", "In Progress", "Completed", "Rejected", "Resolved"].map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        ) : (
+                          <Badge className={`rounded-full border-0 ${STATUS_TONE[issue.status] || "bg-gray-100"}`}>{issue.status}</Badge>
+                        )}
                       </td>
                       <td className="px-3 py-3 text-foreground/70">
                         <div className="text-xs font-medium text-foreground">{dateStr}</div>

@@ -2,12 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical, Pencil, Download } from "lucide-react";
+import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical, Pencil, Download, Settings } from "lucide-react";
 import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useActiveClients, useUpdateDeal, Deal } from "@/lib/queries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 
@@ -55,6 +56,23 @@ function DealsPage() {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const dragCardId = useRef<string | null>(null);
   const dragFromStage = useRef<string | null>(null);
+
+  // Settings state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [dealSettings, setDealSettings] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("socialnxt_deal_settings") || '{"autoAssign":false,"notifyClient":false}');
+    } catch {
+      return { autoAssign: false, notifyClient: false };
+    }
+  });
+
+  const saveSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    localStorage.setItem("socialnxt_deal_settings", JSON.stringify(dealSettings));
+    setIsSettingsOpen(false);
+    toast.success("Deal settings saved.");
+  };
 
   const isClient = workspace?.role === "client";
   const canEdit = !isClient;
@@ -283,6 +301,11 @@ function DealsPage() {
       subtitle="Kanban view of every active project across stages."
       actions={
         <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)} className="rounded-xl h-10 w-10 bg-white" title="Deals Settings">
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           <Button variant="outline" onClick={handleExportDeals} className="rounded-xl h-10 bg-white">
             <Download className="h-4 w-4 mr-2" /> Export
           </Button>
@@ -516,6 +539,41 @@ function DealsPage() {
             <Button type="submit" className="w-full" disabled={updateDeal.isPending}>
               {updateDeal.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Save Changes
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Deals Settings</DialogTitle>
+            <DialogDescription>Configure automation and display preferences for deals.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveSettings} className="space-y-4 pt-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Auto-assign Deals</Label>
+                <div className="text-xs text-muted-foreground">Automatically assign new deals to the account manager.</div>
+              </div>
+              <Switch 
+                checked={dealSettings.autoAssign} 
+                onCheckedChange={(c) => setDealSettings({ ...dealSettings, autoAssign: c })} 
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Client Notifications</Label>
+                <div className="text-xs text-muted-foreground">Notify client when a deal moves to "Review".</div>
+              </div>
+              <Switch 
+                checked={dealSettings.notifyClient} 
+                onCheckedChange={(c) => setDealSettings({ ...dealSettings, notifyClient: c })} 
+              />
+            </div>
+            <Button type="submit" className="w-full">
+              Save Settings
             </Button>
           </form>
         </DialogContent>

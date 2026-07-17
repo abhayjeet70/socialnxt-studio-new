@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Loader2, Save, ShieldCheck } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
-  useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember, useUpdateWorkspace,
+  useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember, useUpdateWorkspace, useDeleteWorkspace,
 } from "@/lib/queries";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ const DEFAULT_PERMISSIONS = [
   { label: "Access Proposals", key: "access_proposals", roles: { admin: true, employee: false, client: false } },
   { label: "Approve proposals", key: "approve_proposals", roles: { admin: true, employee: false, client: false } },
   { label: "Access Quotations", key: "access_quotations", roles: { admin: true, employee: false, client: false } },
+  { label: "Access Deals", key: "access_deals", roles: { admin: true, employee: false, client: false } },
   { label: "Manage employees", key: "manage_employees", roles: { admin: true, employee: false, client: false } },
   { label: "Export reports", key: "export_reports", roles: { admin: true, employee: false, client: false } },
   { label: "View reports", key: "view_reports", roles: { admin: true, employee: true, client: false } },
@@ -67,6 +68,29 @@ function SettingsPage() {
   const [companyName, setCompanyName] = useState(workspace?.workspaceName || "");
   const [supportEmail, setSupportEmail] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteWorkspace = useDeleteWorkspace();
+
+  const handleDeleteWorkspace = () => {
+    if (!workspace) return;
+    const confirmName = prompt(`To confirm deletion, please type the workspace name precisely:\n\n"${workspace.workspaceName}"\n\nWARNING: This action is permanent and deletes all clients, posts, and data.`);
+    if (confirmName !== workspace.workspaceName) {
+      if (confirmName !== null) toast.error("Workspace name did not match.");
+      return;
+    }
+    
+    setIsDeleting(true);
+    deleteWorkspace.mutate({ workspace_id: workspace.workspaceId }, {
+      onSuccess: () => {
+        toast.success("Workspace deleted. Redirecting...");
+        window.location.href = "/";
+      },
+      onError: (e) => {
+        setIsDeleting(false);
+        toast.error("Failed to delete workspace: " + e.message);
+      }
+    });
+  };
 
   // Permissions state
   const [permMatrix, setPermMatrix] = useState<PermMatrix>({});
@@ -163,11 +187,6 @@ function SettingsPage() {
                 <div className="font-semibold">Workspace members</div>
                 <div className="text-xs text-muted-foreground">All users who have access to this workspace.</div>
               </div>
-              {isAdmin && (
-                <Button className="rounded-xl h-10">
-                  <Plus className="h-4 w-4" /> Invite Member
-                </Button>
-              )}
             </div>
 
             {isLoading ? (
@@ -328,7 +347,7 @@ function SettingsPage() {
                     <tr key={p.key} className="border-t border-border hover:bg-muted/30 transition-colors">
                       <td className="px-3 py-3 font-medium">{p.label}</td>
                       {(["admin", "employee", "client"] as const).map((role) => {
-                        const adminToggleableKeys = ["access_proposals", "approve_proposals", "access_quotations"];
+                        const adminToggleableKeys = ["access_proposals", "approve_proposals", "access_quotations", "access_deals"];
                         const isOn = permMatrix[p.key]?.[role] ?? p.roles[role];
                         const isLocked = role === "admin" && !adminToggleableKeys.includes(p.key);
                         return (
@@ -484,10 +503,23 @@ function SettingsPage() {
               />
             </div>
             {isAdmin && (
-              <Button className="rounded-xl h-10" onClick={handleSaveCompanySettings} disabled={isSaving}>
-                {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Save changes
-              </Button>
+              <>
+                <Button className="rounded-xl h-10 mt-2" onClick={handleSaveCompanySettings} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Save changes
+                </Button>
+
+                <div className="pt-8 mt-8 border-t border-red-100 space-y-3">
+                  <div className="font-semibold text-red-600">Danger Zone</div>
+                  <div className="text-sm text-muted-foreground">
+                    Permanently delete this workspace and all its data (clients, posts, issues, deals, etc). This action cannot be undone.
+                  </div>
+                  <Button variant="destructive" className="rounded-xl h-10" onClick={handleDeleteWorkspace} disabled={isDeleting}>
+                    {isDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    Delete Workspace
+                  </Button>
+                </div>
+              </>
             )}
           </div>
         </TabsContent>

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState, useEffect } from "react";
-import { Check, Eye, FileText, Image, LayoutGrid, Play, UsersRound, KeyRound } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Check, Eye, KeyRound } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,87 +29,151 @@ function SocialNxtLogo() {
   );
 }
 
-function FloatingTile({ className, children }: { className: string; children: ReactNode }) {
+/* ─── Social Media SVG Logos ─── */
+function InstagramLogo() {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="ig-grad1" cx="30%" cy="107%" r="150%">
+          <stop offset="0%" stopColor="#fdf497"/>
+          <stop offset="5%" stopColor="#fdf497"/>
+          <stop offset="45%" stopColor="#fd5949"/>
+          <stop offset="60%" stopColor="#d6249f"/>
+          <stop offset="90%" stopColor="#285AEB"/>
+        </radialGradient>
+      </defs>
+      <rect width="24" height="24" rx="6" fill="url(#ig-grad1)"/>
+      <circle cx="12" cy="12" r="4.5" stroke="white" strokeWidth="1.8" fill="none"/>
+      <circle cx="17.5" cy="6.5" r="1.2" fill="white"/>
+      <rect x="3" y="3" width="18" height="18" rx="5" stroke="white" strokeWidth="1.5" fill="none"/>
+    </svg>
+  );
+}
+
+function FacebookLogo() {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="6" fill="#1877F2"/>
+      <path d="M16 8h-2a1 1 0 00-1 1v2h3l-.5 3H13v7h-3v-7H8v-3h2V9a4 4 0 014-4h2v3z" fill="white"/>
+    </svg>
+  );
+}
+
+function LinkedInLogo() {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="6" fill="#0A66C2"/>
+      <rect x="4" y="9" width="3" height="11" fill="white"/>
+      <circle cx="5.5" cy="5.5" r="1.8" fill="white"/>
+      <path d="M9.5 9h2.8v1.5C12.8 9.6 14 9 15.3 9c2.5 0 3.7 1.7 3.7 4.5V20h-3v-5.8c0-1.3-.3-2.2-1.5-2.2s-2 .9-2 2.3V20h-3V9z" fill="white"/>
+    </svg>
+  );
+}
+
+function YouTubeLogo() {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="6" fill="#FF0000"/>
+      <path d="M20.9 7.5s-.2-1.4-.8-2c-.8-.8-1.7-.8-2.1-.9C15.5 4.5 12 4.5 12 4.5s-3.5 0-6 .1c-.4.1-1.3.1-2.1.9-.6.6-.8 2-.8 2S3 9.1 3 10.7v1.5c0 1.6.1 3.2.1 3.2s.2 1.4.8 2c.8.8 1.8.8 2.3.9C7.7 18.5 12 18.5 12 18.5s3.5 0 6-.1c.4-.1 1.3-.1 2.1-.9.6-.6.8-2 .8-2S21 14.9 21 13.3v-1.5c0-1.6-.1-3.3-.1-3.3z" fill="#FF0000"/>
+      <path d="M10.5 15V9l5.5 3-5.5 3z" fill="white"/>
+    </svg>
+  );
+}
+
+function TikTokLogo() {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="6" fill="#010101"/>
+      <path d="M17 6.7c-.9-.6-1.5-1.5-1.7-2.7H13v10.3c0 1.2-.9 2.2-2.1 2.2a2.1 2.1 0 01-2.1-2.1c0-1.2.9-2.1 2.1-2.1.2 0 .4 0 .6.1V10a5 5 0 00-.6 0 4.8 4.8 0 000 9.5 4.8 4.8 0 004.9-4.8V9.3c.8.5 1.8.8 2.8.8V7.4A3.5 3.5 0 0117 6.7z" fill="white"/>
+      <path d="M17 6.7c-.9-.6-1.5-1.5-1.7-2.7H13v10.3c0 1.2-.9 2.2-2.1 2.2a2.1 2.1 0 01-2.1-2.1c0-1.2.9-2.1 2.1-2.1.2 0 .4 0 .6.1V10a5 5 0 00-.6 0 4.8 4.8 0 000 9.5 4.8 4.8 0 004.9-4.8V9.3c.8.5 1.8.8 2.8.8V7.4A3.5 3.5 0 0117 6.7z" fill="#69C9D0" opacity="0.5"/>
+    </svg>
+  );
+}
+
+/* ─── Floating Social Logo Tile ─── */
+interface SocialTileProps {
+  style?: React.CSSProperties;
+  animClass: string;
+  children: React.ReactNode;
+  glowColor?: string;
+}
+
+function SocialTile({ style, animClass, children, glowColor = "rgba(109,40,217,0.4)" }: SocialTileProps) {
   return (
     <div
-      className={`absolute grid h-14 w-14 place-items-center rounded-xl border border-white/15 bg-purple-500/90 text-white shadow-[0_18px_40px_rgba(109,40,217,0.35)] ${className}`}
+      className={`absolute grid h-[52px] w-[52px] place-items-center rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm shadow-lg ${animClass}`}
+      style={{ boxShadow: `0 8px 32px ${glowColor}, 0 2px 8px rgba(0,0,0,0.3)`, ...style }}
     >
       {children}
     </div>
   );
 }
 
+
+/* ─── Illustration (laptop screen + 5 social logos) ─── */
 function LoginIllustration() {
   return (
-    <div className="relative mx-auto mt-8 h-[360px] w-full max-w-[500px]">
-      <div className="absolute bottom-0 left-1/2 h-28 w-[410px] -translate-x-1/2 rounded-[50%] bg-[#2d0d6b] shadow-[inset_0_0_0_2px_rgba(139,92,246,0.4)]" />
-      <div className="absolute bottom-14 left-1/2 h-7 w-[250px] -translate-x-1/2 rounded-b-3xl bg-[#7c3aed] shadow-[0_20px_35px_rgba(0,0,0,0.35)]" />
-      <div className="absolute bottom-[86px] left-1/2 h-[118px] w-[230px] -translate-x-1/2 -skew-y-6 rounded-xl border border-purple-200/40 bg-[#a78bfa] p-3 shadow-[0_24px_45px_rgba(0,0,0,0.35)]">
-        <div className="h-full rounded-lg bg-[#2e1065] p-3">
-          <div className="h-full rounded-md bg-white p-3">
-            <div className="mb-2 h-2 w-16 rounded-full bg-[#4c1d95]" />
-            <div className="grid grid-cols-[1fr_78px] gap-3">
-              <div className="space-y-2">
-                <div className="h-3 rounded-full bg-[#ffd2e3]" />
-                <div className="h-3 w-4/5 rounded-full bg-[#8f8cff]" />
-                <div className="h-3 w-2/3 rounded-full bg-[#53d0ff]" />
-                <div className="flex gap-2 pt-1">
-                  <div className="h-8 w-8 rounded-full bg-[conic-gradient(#2f6bff_0_42%,#16c8a1_42%_66%,#ff8f71_66%_100%)]" />
-                  <div className="h-8 w-8 rounded-full bg-[conic-gradient(#7b4cff_0_34%,#44c7ff_34%_72%,#ffd15a_72%_100%)]" />
-                </div>
-              </div>
-              <div className="flex items-end gap-1.5">
-                <div className="h-8 w-4 rounded-t-sm bg-[#ffb15f]" />
-                <div className="h-12 w-4 rounded-t-sm bg-[#7c3aed]" />
-                <div className="h-16 w-4 rounded-t-sm bg-[#30b7ff]" />
-                <div className="h-10 w-4 rounded-t-sm bg-[#ffa3c1]" />
-              </div>
+    <div className="relative mx-auto mt-10 h-[340px] w-full max-w-[460px]">
+      {/* glow platform ring */}
+      <div className="absolute bottom-0 left-1/2 h-20 w-[380px] -translate-x-1/2 rounded-[50%] bg-[#2d0d6b]/80 blur-sm" />
+
+      {/* laptop hinge/base */}
+      <div className="absolute bottom-16 left-1/2 h-5 w-[220px] -translate-x-1/2 rounded-b-2xl bg-[#7c3aed]/80" />
+
+      {/* screen bezel */}
+      <div className="absolute bottom-[76px] left-1/2 h-[160px] w-[260px] -translate-x-1/2 rounded-2xl border border-purple-300/30 bg-[#a78bfa] p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
+        {/* inner screen */}
+        <div className="h-full rounded-xl bg-[#1e0a3c] p-3 overflow-hidden">
+          {/* browser bar */}
+          <div className="flex items-center gap-1.5 mb-2">
+            <div className="h-2 w-2 rounded-full bg-[#ff5f57]" />
+            <div className="h-2 w-2 rounded-full bg-[#febc2e]" />
+            <div className="h-2 w-2 rounded-full bg-[#28c840]" />
+            <div className="ml-2 h-2 flex-1 rounded-full bg-white/10" />
+          </div>
+          {/* content area */}
+          <div className="rounded-lg bg-white/5 p-2 space-y-2">
+            <div className="h-2 w-3/4 rounded-full bg-[#ffd2e3]/70" />
+            <div className="h-2 w-full rounded-full bg-[#8f8cff]/60" />
+            <div className="h-2 w-2/3 rounded-full bg-[#53d0ff]/50" />
+            <div className="flex gap-2 pt-1">
+              <div className="h-10 w-10 rounded-full bg-[conic-gradient(#2f6bff_0_42%,#16c8a1_42%_66%,#ff8f71_66%_100%)] opacity-80" />
+              <div className="h-10 w-10 rounded-full bg-[conic-gradient(#7b4cff_0_34%,#44c7ff_34%_72%,#ffd15a_72%_100%)] opacity-80" />
             </div>
           </div>
         </div>
       </div>
-      <div className="absolute bottom-[57px] left-1/2 h-20 w-[265px] -translate-x-1/2 skew-x-[-28deg] rounded-sm bg-[#a78bfa]" />
-      <div className="absolute bottom-[72px] left-[calc(50%-80px)] h-10 w-[92px] skew-x-[-28deg] rounded bg-[#3b0764]" />
-      <div className="absolute bottom-[82px] left-[calc(50%-14px)] grid grid-cols-5 gap-1">
-        {Array.from({ length: 20 }).map((_, index) => (
-          <span key={index} className="h-1.5 w-4 rounded-sm bg-[#4c1d95]" />
-        ))}
-      </div>
 
-      <FloatingTile className="left-12 top-48 bg-[#6d28d9]">
-        <LayoutGrid className="h-7 w-7" />
-      </FloatingTile>
-      <FloatingTile className="left-[104px] top-[108px] bg-[#7c3aed]">
-        <FileText className="h-7 w-7" />
-      </FloatingTile>
-      <FloatingTile className="right-[128px] top-20 bg-[#8b5cf6]">
-        <Image className="h-7 w-7" />
-      </FloatingTile>
-      <FloatingTile className="right-14 top-[135px] bg-[#9333ea]">
-        <Play className="h-7 w-7" />
-      </FloatingTile>
-      <FloatingTile className="right-[74px] top-48 bg-[#3b0764]/70 text-purple-300">
-        <UsersRound className="h-7 w-7" />
-      </FloatingTile>
+      {/* ── 5 Social media logos orbiting the laptop ── */}
 
-      <div className="absolute bottom-12 right-28 h-24 w-16">
-        <div className="absolute bottom-0 left-6 h-16 w-7 rounded-full bg-[#18c982]" />
-        <div className="absolute bottom-2 left-0 h-14 w-7 rotate-[35deg] rounded-full bg-[#26d49b]" />
-        <div className="absolute bottom-2 right-0 h-14 w-7 -rotate-[35deg] rounded-full bg-[#13a96f]" />
-        <div className="absolute bottom-0 left-2 h-10 w-12 rounded-b-xl rounded-t-sm bg-white shadow-lg" />
-      </div>
+      {/* Instagram — left middle */}
+      <SocialTile animClass="float-1" style={{ left: "0px", top: "130px" }} glowColor="rgba(225,48,108,0.55)">
+        <InstagramLogo />
+      </SocialTile>
 
-      <div className="absolute left-[92px] top-58 h-16 border-l border-dashed border-purple-300/30" />
-      <div className="absolute right-[78px] top-76 h-20 border-l border-dashed border-purple-300/30" />
-      <div className="absolute right-[48px] bottom-[115px] h-24 border-l border-purple-300/25">
-        <div className="-ml-1 -mt-1 h-2 w-2 rotate-45 border-l border-t border-purple-300/50" />
-      </div>
-      <div className="absolute left-[245px] bottom-[138px] h-20 border-l border-purple-300/25">
-        <div className="-ml-1 -mt-1 h-2 w-2 rotate-45 border-l border-t border-purple-300/50" />
-      </div>
+      {/* Facebook — top left */}
+      <SocialTile animClass="float-2" style={{ left: "60px", top: "50px" }} glowColor="rgba(24,119,242,0.55)">
+        <FacebookLogo />
+      </SocialTile>
+
+      {/* LinkedIn — top right */}
+      <SocialTile animClass="float-3" style={{ right: "55px", top: "50px" }} glowColor="rgba(10,102,194,0.55)">
+        <LinkedInLogo />
+      </SocialTile>
+
+      {/* YouTube — right middle */}
+      <SocialTile animClass="float-4" style={{ right: "0px", top: "148px" }} glowColor="rgba(255,0,0,0.5)">
+        <YouTubeLogo />
+      </SocialTile>
+
+      {/* TikTok — bottom center */}
+      <SocialTile animClass="float-5" style={{ left: "50%", transform: "translateX(-50%)", bottom: "30px" }} glowColor="rgba(105,201,208,0.5)">
+        <TikTokLogo />
+      </SocialTile>
     </div>
   );
 }
+
 
 function GoogleMark() {
   return (
@@ -224,53 +288,70 @@ function LoginPage() {
     });
   };
 
-  // ⚠️ DEV ONLY — one-click sign in. Remove before production.
-  const DEV_EMAIL = "dev@socialnxt.test";
-  const DEV_PASSWORD = "devpassword123";
-  const handleDevSignIn = async () => {
-    setIsLoading(true);
-    setErrorMsg("");
-    setSuccessMsg("");
-    // Try sign in; if the dev account doesn't exist yet, create it, then sign in.
-    let { data, error } = await supabase.auth.signInWithPassword({
-      email: DEV_EMAIL,
-      password: DEV_PASSWORD,
-    });
-    if (error) {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email: DEV_EMAIL,
-        password: DEV_PASSWORD,
-        options: { data: { full_name: "Dev User" } },
-      });
-      if (signUpError && !signUpError.message.toLowerCase().includes("already")) {
-        setIsLoading(false);
-        setErrorMsg(signUpError.message);
-        return;
-      }
-      ({ data, error } = await supabase.auth.signInWithPassword({
-        email: DEV_EMAIL,
-        password: DEV_PASSWORD,
-      }));
-    }
-    setIsLoading(false);
-    if (error) {
-      setErrorMsg(
-        error.message +
-          " — if email confirmation is ON, disable it in Supabase → Auth → Providers for dev.",
-      );
-      return;
-    }
-    if (data.session) navigate({ to: "/" });
-  };
 
   const isSignUp = mode === "signup";
 
   return (
     <main className="min-h-screen bg-[#f5f3ff] p-3 text-[#1e0a3c] sm:p-4">
+      {/* ── Floating animation keyframes ── */}
+      <style>{`
+        @keyframes floatA {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          33% { transform: translateY(-12px) rotate(2deg); }
+          66% { transform: translateY(-6px) rotate(-1deg); }
+        }
+        @keyframes floatB {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          40% { transform: translateY(-16px) rotate(-3deg); }
+          70% { transform: translateY(-8px) rotate(2deg); }
+        }
+        @keyframes floatC {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-10px) rotate(4deg); }
+        }
+        @keyframes floatD {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          45% { transform: translateY(-14px) rotate(-2deg); }
+        }
+        @keyframes floatE {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          30% { transform: translateY(-18px) rotate(3deg); }
+          60% { transform: translateY(-9px) rotate(-2deg); }
+        }
+        @keyframes floatF {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-13px) rotate(-4deg); }
+        }
+        @keyframes floatG {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          35% { transform: translateY(-11px) rotate(2deg); }
+          75% { transform: translateY(-5px) rotate(-3deg); }
+        }
+        @keyframes floatH {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          42% { transform: translateY(-15px) rotate(1deg); }
+        }
+        @keyframes floatI {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          55% { transform: translateY(-9px) rotate(-2deg); }
+        }
+        .float-1 { animation: floatA 4.2s ease-in-out infinite; }
+        .float-2 { animation: floatB 3.8s ease-in-out infinite 0.5s; }
+        .float-3 { animation: floatC 5.1s ease-in-out infinite 1.1s; }
+        .float-4 { animation: floatD 4.6s ease-in-out infinite 0.3s; }
+        .float-5 { animation: floatE 3.9s ease-in-out infinite 0.8s; }
+        .float-6 { animation: floatF 4.4s ease-in-out infinite 1.4s; }
+        .float-7 { animation: floatG 5.3s ease-in-out infinite 0.2s; }
+        .float-8 { animation: floatH 4.0s ease-in-out infinite 1.7s; }
+        .float-9 { animation: floatI 4.8s ease-in-out infinite 0.6s; }
+      `}</style>
+
       <section className="mx-auto grid min-h-[calc(100vh-1.5rem)] max-w-[1380px] overflow-hidden rounded-2xl border border-[#e9e3f8] bg-white shadow-[0_18px_50px_rgba(76,29,149,0.12)] lg:min-h-[calc(100vh-2rem)] lg:grid-cols-[1.03fr_1fr]">
         <aside className="relative hidden overflow-hidden bg-[#2e0069] px-10 py-12 text-white lg:block xl:px-14">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_45%,rgba(124,58,237,0.95),rgba(46,0,105,0.2)_34%,rgba(20,0,50,0)_64%)]" />
           <div className="absolute inset-0 bg-[linear-gradient(135deg,#1a0050_0%,#3b0764_52%,#4c1d95_100%)]" />
+
+
           <div className="relative z-10">
             <SocialNxtLogo />
             <div className="mt-12 max-w-[390px]">
@@ -544,15 +625,6 @@ function LoginPage() {
                   : isSignUp ? "Create Admin Account" : "Sign In"}
               </Button>
 
-              {/* ⚠️ DEV ONLY — remove later */}
-              <button
-                type="button"
-                onClick={handleDevSignIn}
-                disabled={isLoading}
-                className="h-11 w-full rounded-lg border border-dashed border-[#c4b5fd] bg-[#f5f3ff] text-sm font-semibold text-[#7c3aed] transition-colors hover:bg-[#ede9fe] disabled:opacity-70"
-              >
-                ⚡ Dev Quick Sign In (temporary)
-              </button>
             </form>
 
           </>

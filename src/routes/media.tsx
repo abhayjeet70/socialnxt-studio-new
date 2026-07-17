@@ -14,7 +14,7 @@ import {
 } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon } from "lucide-react";
+import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/media")({
@@ -45,6 +45,13 @@ function MediaPage() {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [uploadPlatform, setUploadPlatform] = useState<string>("any");
+
+  const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+
+  const toggleSelection = (id: string) => {
+    setSelectedAssets(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
+  };
 
   const filtered = assets.filter(
     (a) => {
@@ -151,6 +158,58 @@ function MediaPage() {
     }
   };
 
+  const handleSelectAll = () => {
+    if (selectedAssets.length === filtered.length) {
+      setSelectedAssets([]);
+    } else {
+      setSelectedAssets(filtered.map(a => a.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!workspace || selectedAssets.length === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedAssets.length} assets?`)) return;
+    try {
+      for (const id of selectedAssets) {
+        await deleteAsset.mutateAsync({ id, workspace_id: workspace.workspaceId });
+      }
+      toast.success(`Deleted ${selectedAssets.length} assets`);
+      setSelectedAssets([]);
+      setIsSelectionMode(false);
+    } catch (err: any) {
+      toast.error("Bulk delete failed: " + err.message);
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    if (selectedAssets.length === 0) return;
+    const assetsToDownload = filtered.filter(a => selectedAssets.includes(a.id));
+    
+    toast.info(`Preparing download for ${selectedAssets.length} files...`);
+    
+    for (const a of assetsToDownload) {
+      try {
+        const response = await fetch(a.url);
+        if (!response.ok) throw new Error("Network response was not ok");
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = a.file_name || "asset";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+      } catch (err) {
+        console.error("Failed to download", a.url, err);
+        toast.error(`Failed to download ${a.file_name || "asset"}`);
+      }
+    }
+    toast.success(`Finished downloading files`);
+  };
+
   return (
     <AppShell
       title="Media Library"
@@ -206,6 +265,28 @@ function MediaPage() {
                 ))}
               </select>
             )}
+            
+            {isSelectionMode ? (
+              <div className="flex items-center gap-2 bg-primary/10 px-3 py-1.5 rounded-xl border border-primary/20 mt-2 sm:mt-0">
+                <span className="text-sm font-semibold text-primary mr-2 hidden sm:inline">{selectedAssets.length} selected</span>
+                <Button size="sm" variant="outline" onClick={handleSelectAll} className="h-8 text-xs bg-white">
+                  {selectedAssets.length === filtered.length && filtered.length > 0 ? "Deselect All" : "Select All"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleBulkDownload} className="h-8 text-xs bg-white" disabled={selectedAssets.length === 0}>
+                  <Download className="h-3 w-3 sm:mr-1" /> <span className="hidden sm:inline">Download</span>
+                </Button>
+                <Button size="sm" variant="destructive" onClick={handleBulkDelete} className="h-8 text-xs" disabled={selectedAssets.length === 0}>
+                  <Trash2 className="h-3 w-3 sm:mr-1" /> <span className="hidden sm:inline">Delete</span>
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setIsSelectionMode(false); setSelectedAssets([]); }} className="h-8 text-xs ml-1 px-2">
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" onClick={() => setIsSelectionMode(true)} className="h-10 rounded-xl bg-white mt-2 sm:mt-0">
+                <CheckSquare className="h-4 w-4 mr-2" /> Bulk Select
+              </Button>
+            )}
           </div>
           
           {workspace?.role !== "client" && (
@@ -256,8 +337,23 @@ function MediaPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {filtered.map((a) => (
-            <div key={a.id} className="group card-soft overflow-hidden flex flex-col">
-              <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
+            <div 
+              key={a.id} 
+              className={`group card-soft overflow-hidden flex flex-col relative transition-all ${isSelectionMode ? "cursor-pointer hover:ring-2 ring-primary/50" : ""} ${selectedAssets.includes(a.id) ? "ring-2 ring-primary" : ""}`}
+              onClick={() => isSelectionMode && toggleSelection(a.id)}
+            >
+              {isSelectionMode && (
+                <div className="absolute top-2 left-2 z-10 bg-white/80 rounded backdrop-blur-sm shadow-sm p-1">
+                  <input 
+                    type="checkbox" 
+                    className="w-4 h-4 cursor-pointer accent-primary" 
+                    checked={selectedAssets.includes(a.id)} 
+                    onChange={() => toggleSelection(a.id)} 
+                    onClick={(e) => e.stopPropagation()} 
+                  />
+                </div>
+              )}
+              <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden relative">
                 {isImage(a) ? (
                   <a href={a.url} target="_blank" rel="noreferrer" className="w-full h-full">
                     <img src={a.url} alt={a.file_name || "asset"} className="w-full h-full object-cover" />

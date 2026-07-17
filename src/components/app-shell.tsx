@@ -81,12 +81,13 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
     
     if (item.to === "/proposals") return hasPerm("access_proposals", role, role === "admin");
     if (item.to === "/quotations") return hasPerm("access_quotations", role, role === "admin");
+    if (item.to === "/deals") return hasPerm("access_deals", role, role === "admin");
 
     if (role === "client") {
       return ["/", "/calendar", "/tasks", "/media", "/meetings", "/issues", "/activity-logs", "/proposals", "/quotations"].includes(item.to);
     }
     if (role === "employee") {
-      return !["/team", "/deals", "/proposals", "/quotations"].includes(item.to);
+      return !["/team", "/deals", "/proposals", "/quotations", "/settings", "/reports"].includes(item.to);
     }
     return true;
   });
