@@ -14,7 +14,9 @@ import {
 } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download } from "lucide-react";
+import { InstagramLogo, FacebookLogo, LinkedInLogo, TwitterLogo, TikTokLogo } from "@/components/social-icons";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/media")({
@@ -26,6 +28,17 @@ function isImage(a: MediaAsset) {
   if (a.mime_type?.startsWith("image/")) return true;
   return /\.(jpe?g|gif|png|webp|svg|avif)$/i.test(a.url);
 }
+
+const PlatformIcon = ({ platform, size = 14, className }: { platform: string, size?: number, className?: string }) => {
+  switch (platform.toLowerCase()) {
+    case 'instagram': return <InstagramLogo width={size} height={size} className={className} />;
+    case 'facebook': return <FacebookLogo width={size} height={size} className={className} />;
+    case 'linkedin': return <LinkedInLogo width={size} height={size} className={className} />;
+    case 'twitter': return <TwitterLogo width={size} height={size} className={className} />;
+    case 'tiktok': return <TikTokLogo width={size} height={size} className={className} />;
+    default: return null;
+  }
+};
 
 function MediaPage() {
   const { data: workspace } = useCurrentWorkspace();
@@ -78,7 +91,7 @@ function MediaPage() {
         clientName.toLowerCase().includes(q.toLowerCase());
       
       const matchClient = selectedClient === "all" || a.client_id === selectedClient;
-      const matchPlatform = filterPlatform === "all" || a.platform === filterPlatform;
+      const matchPlatform = filterPlatform === "all" || (a.platform || "").split(",").includes(filterPlatform);
       
       let matchDate = true;
       if (dateFilter !== "all" && a.created_at) {
@@ -415,24 +428,48 @@ function MediaPage() {
                     </select>
                   )}
                   
-                  <select
-                    className="text-[10px] text-muted-foreground bg-transparent border-none p-0 h-auto focus:ring-0 cursor-pointer hover:text-foreground w-full mt-0.5"
-                    value={a.platform || ""}
-                    onChange={async (e) => {
-                      const p = e.target.value || null;
-                      try {
-                        await updateAsset.mutateAsync({ id: a.id, workspace_id: workspace!.workspaceId, updates: { platform: p } });
-                        toast.success("Platform updated");
-                      } catch (err: any) { toast.error("Failed: " + err.message); }
-                    }}
-                  >
-                    <option value="">No Platform Selected</option>
-                    <option value="instagram">Instagram</option>
-                    <option value="facebook">Facebook</option>
-                    <option value="linkedin">LinkedIn</option>
-                    <option value="twitter">Twitter</option>
-                    <option value="tiktok">TikTok</option>
-                  </select>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="text-[10px] text-muted-foreground bg-transparent border-none p-0 h-auto focus:ring-0 cursor-pointer hover:text-foreground w-full mt-0.5 text-left outline-none flex flex-wrap items-center gap-1.5">
+                        {a.platform ? a.platform.split(",").map((p, idx, arr) => (
+                          <span key={p} className="flex items-center gap-1.5">
+                            <PlatformIcon platform={p} size={14} className="shrink-0 rounded-[3px] overflow-hidden" />
+                            <span className="truncate">{p.charAt(0).toUpperCase() + p.slice(1)}{idx < arr.length - 1 ? "," : ""}</span>
+                          </span>
+                        )) : "No Platform Selected"}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-40">
+                      {["instagram", "facebook", "linkedin", "twitter", "tiktok"].map((plat) => {
+                        const currentPlatforms = a.platform ? a.platform.split(",") : [];
+                        const isSelected = currentPlatforms.includes(plat);
+                        return (
+                          <DropdownMenuCheckboxItem
+                            key={plat}
+                            checked={isSelected}
+                            onCheckedChange={async (checked) => {
+                              let newPlatforms = [...currentPlatforms];
+                              if (checked) {
+                                newPlatforms.push(plat);
+                              } else {
+                                newPlatforms = newPlatforms.filter(p => p !== plat);
+                              }
+                              const p = newPlatforms.length > 0 ? newPlatforms.join(",") : null;
+                              try {
+                                await updateAsset.mutateAsync({ id: a.id, workspace_id: workspace!.workspaceId, updates: { platform: p } });
+                                toast.success("Platform updated");
+                              } catch (err: any) { toast.error("Failed: " + err.message); }
+                            }}
+                          >
+                            <span className="flex items-center gap-2">
+                              <PlatformIcon platform={plat} size={16} className="rounded-md" />
+                              {plat.charAt(0).toUpperCase() + plat.slice(1)}
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             </div>

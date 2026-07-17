@@ -75,9 +75,10 @@ const PLATFORM_COLORS: Record<string, string> = {
 
 const ALL_PLATFORMS = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok"];
 
-function PlatformMultiSelect({ value, onChange, disabled }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
+function PlatformMultiSelect({ value, onChange, disabled, availablePlatforms }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean; availablePlatforms?: string[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const platforms = availablePlatforms && availablePlatforms.length > 0 ? availablePlatforms : ALL_PLATFORMS;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -115,18 +116,27 @@ function PlatformMultiSelect({ value, onChange, disabled }: { value: string[]; o
       </button>
       {open && (
         <div className="absolute z-50 top-full left-0 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1 mt-1">
-          {ALL_PLATFORMS.map(p => (
-            <label key={p} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 transition-colors">
-              <input
-                type="checkbox"
-                checked={value.includes(p)}
-                onChange={() => toggle(p)}
-                className="accent-blue-600 w-3.5 h-3.5"
-              />
-              <PlatformLogo platform={p} size={16} />
-              <span className="font-medium">{p}</span>
-            </label>
-          ))}
+          {platforms.map(p => {
+            const selected = value.includes(p);
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => toggle(p)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 transition-colors text-left ${
+                  selected ? "bg-violet-50" : ""
+                }`}
+              >
+                <PlatformLogo platform={p} size={16} />
+                <span className="font-medium flex-1">{p}</span>
+                {selected && (
+                  <span className="w-4 h-4 rounded-full bg-violet-600 flex items-center justify-center shrink-0">
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 4L3.5 6L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -579,6 +589,10 @@ function TasksPage() {
                 <Undo className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">Undo</span>
               </Button>
+              <Button variant="outline" onClick={handleAddColumn} disabled={!workspace} className="rounded-xl h-10 border-input bg-white">
+                <Plus className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Add Column</span>
+              </Button>
               <Button onClick={handleAddRow} disabled={!workspace} className="rounded-xl h-10">
                 <Plus className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">Add Row</span>
@@ -608,18 +622,11 @@ function TasksPage() {
                   <ResizableHeader label="SCHEDULED TIME" defaultWidth={160} />
                   <ResizableHeader label="STATUS" defaultWidth={128} className="text-center" />
                   {customColumns.map(col => <ResizableHeader key={col} label={col.toUpperCase()} defaultWidth={160} onDelete={() => handleDeleteColumn(col)} />)}
-                  <th className="px-4 py-3 border-l border-white/20 font-semibold w-16 text-center align-middle">
-                    <button 
-                      onClick={handleAddColumn} 
-                      className="hover:bg-white/20 p-1.5 rounded-md text-xl leading-none transition-colors"
-                      title="Add Custom Column"
-                    >+</button>
-                  </th>
                 </tr>
               </thead>
               <tbody>
                 {pagedPosts.map((post, idx) => (
-                  <TaskRow key={post.id} post={post} index={safePage * PAGE_SIZE + idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} selectedClientFilter={selectedClientFilter} customColumns={customColumns} setLightboxImage={setLightboxImage} />
+                  <TaskRow key={post.id} post={post} index={safePage * PAGE_SIZE + idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} selectedClientFilter={selectedClientFilter} customColumns={customColumns} setLightboxImage={setLightboxImage} clients={clients} />
                 ))}
                 {sortedPosts.length === 0 && (
                   <tr>
@@ -722,6 +729,7 @@ function TaskRow({ post, index, isClient, allClientNames,
   selectedClientFilter,
   customColumns,
   setLightboxImage,
+  clients,
 }: {
   post: Post;
   index: number;
@@ -732,6 +740,7 @@ function TaskRow({ post, index, isClient, allClientNames,
   selectedClientFilter: string;
   customColumns: string[];
   setLightboxImage: (url: string | null) => void;
+  clients: Client[];
 }) {
   const queryClient = useQueryClient();
   const { data: workspace } = useCurrentWorkspace();
@@ -898,6 +907,7 @@ function TaskRow({ post, index, isClient, allClientNames,
           value={post.platforms ?? (post.platform ? [post.platform] : [])}
           disabled={isClient}
           onChange={(vals) => updatePost.mutate({ id: post.id, updates: { platforms: vals } })}
+          availablePlatforms={clients.find(c => c.name === post.client_name)?.platforms ?? ALL_PLATFORMS}
         />
       </td>
 
@@ -1206,7 +1216,6 @@ function TaskRow({ post, index, isClient, allClientNames,
           />
         </td>
       ))}
-      <td className="p-0 border-r border-gray-200"></td>
 
       {/* Hidden file input for uploads */}
       <input 
