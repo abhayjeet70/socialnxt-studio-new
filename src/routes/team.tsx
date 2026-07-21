@@ -72,8 +72,8 @@ function TeamPage() {
   const { data: posts = [] } = usePosts(workspace?.workspaceId);
 
   const [isInviteOpen, setIsInviteOpen] = useState(false);
-  const [inviteMethod, setInviteMethod] = useState<"link" | "create">("link");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [createPhone, setCreatePhone] = useState("");
   const [createName, setCreateName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -125,24 +125,18 @@ function TeamPage() {
     const role = inviteRole === "client" ? "client" : "employee";
     const agencyRole = inviteRole === "client" ? undefined : inviteRole;
     try {
-      if (inviteMethod === "link") {
-        await sendInvite({
-          data: { email: inviteEmail, role, agencyRole, workspaceId: workspace.workspaceId },
-        });
-        toast.success(`Invite sent to ${inviteEmail}!`);
-      } else {
-        await createAccount({
-          data: { name: createName, email: inviteEmail, password: createPassword, role, agencyRole, workspaceId: workspace.workspaceId },
-        });
-        toast.success(`Account created for ${inviteEmail}!`);
-      }
+      await createAccount({
+        data: { name: createName, email: inviteEmail, phone: createPhone, password: createPassword, role, agencyRole, workspaceId: workspace.workspaceId },
+      });
+      toast.success(`Account created for ${inviteEmail}!`);
       setIsInviteOpen(false);
       setInviteEmail("");
       setCreateName("");
+      setCreatePhone("");
       setCreatePassword("");
       setInviteRole("Social Media Manager");
     } catch (err: any) {
-      toast.error(inviteMethod === "link" ? "Failed to send invite: " : "Failed to create account: " + (err.message || "Unknown error"));
+      toast.error("Failed to create account: " + (err.message || "Unknown error"));
     } finally {
       setIsSending(false);
     }
@@ -154,7 +148,7 @@ function TeamPage() {
       subtitle="Everyone in your workspace, their roles and active workload."
       actions={
         isAdmin ? (
-          <Button className="rounded-xl h-10" onClick={() => { setIsInviteOpen(true); setInviteMethod("link"); }}>
+          <Button className="rounded-xl h-10" onClick={() => setIsInviteOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> Add Member
           </Button>
         ) : null
@@ -165,65 +159,59 @@ function TeamPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Add a Team Member</DialogTitle>
-            <DialogDescription>Invite a user via email link or create their account directly.</DialogDescription>
+            <DialogDescription>Create an account for your new team member.</DialogDescription>
           </DialogHeader>
 
-          <Tabs value={inviteMethod} onValueChange={(v) => setInviteMethod(v as any)} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="link">Invite via Link</TabsTrigger>
-              <TabsTrigger value="create">Create Account</TabsTrigger>
-            </TabsList>
-            
-            <form onSubmit={handleSendInvite} className="space-y-4 pt-4 mt-2">
-              {inviteMethod === "create" && (
-                <div className="space-y-2">
-                  <Label htmlFor="create-name">Full Name</Label>
-                  <Input id="create-name" required placeholder="John Doe" value={createName} onChange={(e) => setCreateName(e.target.value)} />
-                </div>
-              )}
+          <form onSubmit={handleSendInvite} className="space-y-4 pt-4 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor="create-name">Full Name</Label>
+              <Input id="create-name" required placeholder="John Doe" value={createName} onChange={(e) => setCreateName(e.target.value)} />
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="invite-email">Email Address</Label>
-                <Input id="invite-email" type="email" required placeholder="colleague@example.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+            <div className="space-y-2">
+              <Label htmlFor="invite-email">Email Address</Label>
+              <Input id="invite-email" type="email" required placeholder="colleague@example.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="create-phone">Phone Number</Label>
+              <Input id="create-phone" type="tel" required pattern="\d{10}" title="Phone number must be exactly 10 digits" placeholder="1234567890" value={createPhone} onChange={(e) => setCreatePhone(e.target.value)} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="create-password">Password</Label>
+              <div className="relative">
+                <Input id="create-password" type={showPassword ? "text" : "password"} required minLength={6} placeholder="Min 6 characters" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} className="pr-10" />
+                <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
+            </div>
 
-              {inviteMethod === "create" && (
-                <div className="space-y-2">
-                  <Label htmlFor="create-password">Password</Label>
-                  <div className="relative">
-                    <Input id="create-password" type={showPassword ? "text" : "password"} required minLength={6} placeholder="Min 6 characters" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} className="pr-10" />
-                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite-role">Role</Label>
+              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as any)}>
+                <SelectTrigger id="invite-role"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client">Client</SelectItem>
+                  <SelectItem value="Social Media Manager">Employee: Social Media Manager</SelectItem>
+                  <SelectItem value="Designer">Employee: Designer</SelectItem>
+                  <SelectItem value="Video Editor">Employee: Video Editor</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {inviteRole === "client" ? "Clients can view and approve content on the calendar." : `Employees (${inviteRole}) can create and manage content based on their role.`}
+              </p>
+            </div>
+
+            <Button type="submit" className="w-full" disabled={isSending}>
+              {isSending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</>
+              ) : (
+                <><UserCheck className="h-4 w-4 mr-2" /> Create Account</>
               )}
-
-              <div className="space-y-2">
-                <Label htmlFor="invite-role">Role</Label>
-                <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as any)}>
-                  <SelectTrigger id="invite-role"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="client">Client</SelectItem>
-                    <SelectItem value="Social Media Manager">Employee: Social Media Manager</SelectItem>
-                    <SelectItem value="Designer">Employee: Designer</SelectItem>
-                    <SelectItem value="Video Editor">Employee: Video Editor</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {inviteRole === "client" ? "Clients can view and approve content on the calendar." : `Employees (${inviteRole}) can create and manage content based on their role.`}
-                </p>
-              </div>
-
-              <Button type="submit" className="w-full" disabled={isSending}>
-                {isSending ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {inviteMethod === "link" ? "Sending..." : "Creating..."}</>
-                ) : (
-                  inviteMethod === "link" ? <><Mail className="h-4 w-4 mr-2" /> Send Invite Link</> : <><UserCheck className="h-4 w-4 mr-2" /> Create Account</>
-                )}
-              </Button>
-            </form>
-          </Tabs>
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
 

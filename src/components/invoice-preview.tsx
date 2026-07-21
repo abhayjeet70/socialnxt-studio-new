@@ -90,12 +90,14 @@ export function InvoicePreview({ invoice: q, onClose, embedded }: { invoice: Quo
             <div className="flex items-start justify-between pb-4 border-b-2 border-gray-200">
               <div>
                 <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 inline-block mb-2 shadow-sm">
-                  <img src={logo} alt="Logo" style={{ height: "40px", width: "auto", objectFit: "contain", display: "block" }} />
+                  <img src={logo} alt="Logo" style={{ height: "80px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
                 </div>
                 {ef.company_tagline && <p className="text-[11px] text-gray-500 mt-1 italic">{ef.company_tagline}</p>}
               </div>
-              <div className="text-right text-[11px] text-gray-600 leading-relaxed">
-                {ef.company_address && <p>{ef.company_address}</p>}
+              <div className="text-right text-[11px] text-gray-600 leading-relaxed flex flex-col items-end gap-1">
+                {ef.company_address && <p className="max-w-[200px]">{ef.company_address}</p>}
+                {ef.company_phone && <p>Phone: {ef.company_phone}</p>}
+                {ef.company_email && <p>Email: {ef.company_email}</p>}
                 {ef.company_gstin && <p>GSTIN: {ef.company_gstin}</p>}
               </div>
             </div>

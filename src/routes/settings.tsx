@@ -6,8 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Loader2, Save, ShieldCheck } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Plus, Loader2, Save, ShieldCheck, Search, MoreHorizontal, UserX } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from "@/components/ui/accordion";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember, useUpdateWorkspace, useDeleteWorkspace,
 } from "@/lib/queries";
@@ -103,7 +112,6 @@ function SettingsPage() {
     }
   }, [workspace?.workspaceId]);
 
-  // Group members by role
   const byRole = {
     admin: members.filter((m) => m.role === "admin"),
     employee: members.filter((m) => m.role === "employee"),
@@ -111,6 +119,20 @@ function SettingsPage() {
   };
 
   const roles = ["admin", "employee", "client"];
+
+  // Member filtering
+  const [memberSearch, setMemberSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+
+  const filteredMembers = useMemo(() => {
+    return members.filter(m => {
+      const name = (m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown").toLowerCase();
+      const email = (m.users?.email || "").toLowerCase();
+      const matchesSearch = name.includes(memberSearch.toLowerCase()) || email.includes(memberSearch.toLowerCase());
+      const matchesRole = roleFilter === "all" || m.role === roleFilter;
+      return matchesSearch && matchesRole;
+    });
+  }, [members, memberSearch, roleFilter]);
 
   const handleRemove = (userId: string, name: string) => {
     if (!workspace) return;
@@ -171,10 +193,16 @@ function SettingsPage() {
   return (
     <AppShell title="Settings" subtitle="Manage members, roles, departments and workspace preferences.">
       <Tabs defaultValue="members" className="w-full">
-        <TabsList className="bg-muted/60 p-1 rounded-xl flex flex-wrap h-auto">
-          {["members", "roles", "permissions", "social", "company"].map((v) => (
-            <TabsTrigger key={v} value={v} className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm capitalize">
-              {v === "company" ? "Company Settings" : v === "social" ? "Social Accounts" : v}
+        <TabsList className="bg-muted/60 p-1 rounded-xl flex flex-wrap h-auto gap-1">
+          {[
+            { value: "members", label: "Members" },
+            { value: "roles-permissions", label: "Roles & Permissions" },
+            { value: "social", label: "Social Accounts" },
+            { value: "platforms", label: "Platforms" },
+            { value: "company", label: "Company Settings" },
+          ].map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value} className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm text-sm px-4">
+              {tab.label}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -182,20 +210,48 @@ function SettingsPage() {
         {/* ─── Members Tab ─────────────────────────────────────────────────────── */}
         <TabsContent value="members" className="mt-5">
           <div className="card-soft p-4 sm:p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
               <div>
-                <div className="font-semibold">Workspace members</div>
-                <div className="text-xs text-muted-foreground">All users who have access to this workspace.</div>
+                <div className="font-semibold text-lg">Workspace members</div>
+                <div className="text-sm text-muted-foreground">All users who have access to this workspace.</div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Search members..." 
+                    className="pl-9 h-10 rounded-xl min-w-[220px]"
+                    value={memberSearch}
+                    onChange={e => setMemberSearch(e.target.value)}
+                  />
+                </div>
+                <Select value={roleFilter} onValueChange={setRoleFilter}>
+                  <SelectTrigger className="h-10 rounded-xl min-w-[140px]">
+                    <SelectValue placeholder="All Roles" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="employee">Employee</SelectItem>
+                    <SelectItem value="client">Client</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             {isLoading ? (
               <div className="py-12 flex justify-center"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>
+            ) : filteredMembers.length === 0 ? (
+              <div className="py-12 flex flex-col items-center justify-center text-center">
+                <UserX className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                <div className="font-semibold text-foreground/80">No members found</div>
+                <div className="text-sm text-muted-foreground mt-1">Try adjusting your search or filters.</div>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[600px]">
                   <thead>
-                    <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
                       <th className="px-3 py-3 font-semibold">Name</th>
                       <th className="px-3 py-3 font-semibold">Email</th>
                       <th className="px-3 py-3 font-semibold">Role</th>
@@ -204,30 +260,30 @@ function SettingsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {members.map((m, i) => {
+                    {filteredMembers.map((m, i) => {
                       const name = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
                       const initials = name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
                       const isSelf = m.user_id === workspace?.userId;
                       return (
-                        <tr key={m.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                        <tr key={m.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                           <td className="px-3 py-3">
                             <div className="flex items-center gap-3">
                               <div
-                                className="h-8 w-8 rounded-lg grid place-items-center text-white text-xs font-semibold shrink-0"
+                                className="h-9 w-9 rounded-xl grid place-items-center text-white text-xs font-semibold shrink-0 shadow-sm"
                                 style={{ background: BG_COLORS[i % BG_COLORS.length] }}
                               >
                                 {initials}
                               </div>
                               <div>
-                                <div className="font-semibold">{name} {isSelf && <span className="text-[10px] text-muted-foreground">(you)</span>}</div>
+                                <div className="font-semibold text-[13px]">{name} {isSelf && <span className="text-[10px] text-muted-foreground ml-1">(you)</span>}</div>
                               </div>
                             </div>
                           </td>
                           <td className="px-3 py-3 text-foreground/70">{m.users?.email || "—"}</td>
                           <td className="px-3 py-3">
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROLE_COLORS[m.role] || "bg-muted text-foreground/70"}`}>
+                            <Badge variant="outline" className={`font-semibold border-0 ${ROLE_COLORS[m.role] || "bg-muted text-foreground/70"}`}>
                               {m.role}
-                            </span>
+                            </Badge>
                           </td>
                           <td className="px-3 py-3 text-foreground/70 text-xs">
                             {new Date(m.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
@@ -235,12 +291,18 @@ function SettingsPage() {
                           {isAdmin && (
                             <td className="px-3 py-3 text-right">
                               {!isSelf && (
-                                <button
-                                  onClick={() => handleRemove(m.user_id, name)}
-                                  className="text-xs text-red-500 hover:underline"
-                                >
-                                  Remove
-                                </button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleRemove(m.user_id, name)} className="text-red-600 focus:text-red-700">
+                                      Remove from workspace
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               )}
                             </td>
                           )}
@@ -254,70 +316,26 @@ function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* ─── Roles Tab ──────────────────────────────────────────────────────── */}
-        <TabsContent value="roles" className="mt-5">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {roles.map((r) => {
-              const count = byRole[r as keyof typeof byRole]?.length || 0;
-              const descriptions: Record<string, string> = {
-                admin: "Full access — manage members, approve proposals, view all reports.",
-                employee: "Can create content, upload media, mark posts as posted.",
-                client: "Can view approved content and submit/reject proposals.",
-              };
-              return (
-                <div key={r} className="card-soft p-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-semibold capitalize">{r}</div>
-                    <Badge className={`rounded-full border-0 ${ROLE_COLORS[r]}`}>{count} member{count !== 1 ? "s" : ""}</Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{descriptions[r]}</div>
-                  {(byRole[r as keyof typeof byRole] || []).length > 0 && (
-                    <div className="mt-3 space-y-1">
-                      {(byRole[r as keyof typeof byRole] || []).map((m) => (
-                        <div key={m.id} className="text-xs text-foreground/70 truncate">
-                          {m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown"}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </TabsContent>
-
-        {/* ─── Permissions Tab ────────────────────────────────────────────────── */}
-        <TabsContent value="permissions" className="mt-5">
-          <div className="card-soft p-5 space-y-4">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        {/* ─── Roles & Permissions Tab (merged) ───────────────────────────────── */}
+        <TabsContent value="roles-permissions" className="mt-5">
+          <div className="space-y-4">
+            {/* Header + actions */}
+            <div className="card-soft p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 font-semibold text-base">
+                <div className="flex items-center gap-2 font-semibold text-lg">
                   <ShieldCheck className="h-5 w-5 text-primary" />
-                  Role Permissions
+                  Roles &amp; Permissions
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {isAdmin
-                    ? "Toggle permissions for each role. Changes apply workspace-wide."
-                    : "Showing permissions by role. Only admins can change access levels."}
+                <div className="text-sm text-muted-foreground mt-1">
+                  {isAdmin ? "Expand a role to see its members and manage permissions." : "Showing role assignments and permission levels. Only admins can make changes."}
                 </div>
               </div>
               {isAdmin && (
                 <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-xl h-9 text-xs"
-                    onClick={handleResetPermissions}
-                  >
+                  <Button variant="outline" size="sm" className="rounded-xl h-9 text-xs" onClick={handleResetPermissions}>
                     Reset to defaults
                   </Button>
-                  <Button
-                    size="sm"
-                    className="rounded-xl h-9 text-xs gap-1"
-                    onClick={handleSavePermissions}
-                    disabled={!permsDirty || permsSaving}
-                  >
+                  <Button size="sm" className="rounded-xl h-9 text-xs gap-1.5" onClick={handleSavePermissions} disabled={!permsDirty || permsSaving}>
                     {permsSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                     Save changes
                   </Button>
@@ -325,205 +343,311 @@ function SettingsPage() {
               )}
             </div>
 
-            {/* Unsaved indicator */}
             {permsDirty && isAdmin && (
-              <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                You have unsaved permission changes. Click "Save changes" to apply them.
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                Unsaved permission changes — click "Save changes" to apply them workspace-wide.
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[500px]">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                    <th className="px-3 py-2 font-semibold">Permission</th>
-                    <th className="px-3 py-2 font-semibold text-center">Admin</th>
-                    <th className="px-3 py-2 font-semibold text-center">Employee</th>
-                    <th className="px-3 py-2 font-semibold text-center">Client</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DEFAULT_PERMISSIONS.map((p) => (
-                    <tr key={p.key} className="border-t border-border hover:bg-muted/30 transition-colors">
-                      <td className="px-3 py-3 font-medium">{p.label}</td>
-                      {(["admin", "employee", "client"] as const).map((role) => {
-                        const adminToggleableKeys = ["access_proposals", "approve_proposals", "access_quotations", "access_deals"];
-                        const isOn = permMatrix[p.key]?.[role] ?? p.roles[role];
-                        const isLocked = role === "admin" && !adminToggleableKeys.includes(p.key);
-                        return (
-                          <td key={role} className="px-3 py-3 text-center">
-                            {isAdmin ? (
-                              <div className="flex justify-center">
-                                <Switch
-                                  checked={isLocked ? true : isOn}
-                                  disabled={isLocked}
-                                  onCheckedChange={(val) => !isLocked && handleToggle(p.key, role, val)}
-                                  className={isLocked ? "opacity-50 cursor-not-allowed" : ""}
-                                />
+            {/* Accordion per role */}
+            <Accordion type="multiple" className="space-y-3">
+              {(["admin", "employee", "client"] as const).map((role) => {
+                const roleMembers = byRole[role] || [];
+                const count = roleMembers.length;
+                const descriptions: Record<string, string> = {
+                  admin: "Full access — can manage all members, approve proposals, configure settings, and view all reports.",
+                  employee: "Team member access — can create content, upload media, and mark posts as posted.",
+                  client: "Client access — can view approved content, provide feedback, and manage proposals.",
+                };
+                const roleIcons: Record<string, string> = { admin: "🛡️", employee: "👤", client: "🏢" };
+                return (
+                  <AccordionItem key={role} value={role} className="card-soft border-0 overflow-hidden">
+                    <AccordionTrigger className="px-5 py-4 hover:no-underline hover:bg-muted/30 transition-colors [&>svg]:text-muted-foreground">
+                      <div className="flex items-center gap-3 text-left">
+                        <span className="text-xl">{roleIcons[role]}</span>
+                        <div>
+                          <div className="font-semibold capitalize text-base flex items-center gap-2">
+                            {role}
+                            <Badge className={`rounded-full border-0 text-xs font-semibold ${ROLE_COLORS[role]}`}>{count} member{count !== 1 ? "s" : ""}</Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground font-normal mt-0.5">{descriptions[role]}</div>
+                        </div>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-5 pb-5">
+                      {/* Members */}
+                      <div className="mb-5">
+                        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Members with this role</div>
+                        {roleMembers.length === 0 ? (
+                          <div className="text-sm text-muted-foreground italic">No members assigned to this role yet.</div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {roleMembers.map((m, i) => {
+                              const name = m.users?.full_name || m.users?.email?.split("@")[0] || "Unknown";
+                              const initials = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+                              return (
+                                <div key={m.id} className="flex items-center gap-2 bg-muted rounded-xl px-3 py-1.5">
+                                  <div className="h-6 w-6 rounded-lg grid place-items-center text-white text-[10px] font-bold shrink-0" style={{ background: BG_COLORS[i % BG_COLORS.length] }}>
+                                    {initials}
+                                  </div>
+                                  <span className="text-sm font-medium">{name}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Permissions for this role */}
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Permissions</div>
+                        <div className="space-y-0 border border-border rounded-xl overflow-hidden">
+                          {DEFAULT_PERMISSIONS.map((p, idx) => {
+                            const adminToggleableKeys = ["access_proposals", "approve_proposals", "access_quotations", "access_deals"];
+                            const isOn = permMatrix[p.key]?.[role] ?? p.roles[role as keyof typeof p.roles];
+                            const isLocked = role === "admin" && !adminToggleableKeys.includes(p.key);
+                            return (
+                              <div key={p.key} className={`flex items-center justify-between px-4 py-3 ${idx !== DEFAULT_PERMISSIONS.length - 1 ? "border-b border-border/60" : ""} ${idx % 2 === 0 ? "bg-background" : "bg-muted/20"}`}>
+                                <div>
+                                  <div className="text-sm font-medium">{p.label}</div>
+                                  {isLocked && <div className="text-[10px] text-muted-foreground mt-0.5">Always granted to Admin</div>}
+                                </div>
+                                {isAdmin ? (
+                                  <Switch
+                                    checked={isLocked ? true : isOn}
+                                    disabled={isLocked}
+                                    onCheckedChange={(val) => !isLocked && handleToggle(p.key, role, val)}
+                                    className={isLocked ? "opacity-40 cursor-not-allowed" : ""}
+                                  />
+                                ) : (
+                                  <span className={`text-sm font-semibold ${isOn ? "text-green-600" : "text-muted-foreground"}`}>
+                                    {isOn ? "✓ Granted" : "— Denied"}
+                                  </span>
+                                )}
                               </div>
-                            ) : (
-                              isOn
-                                ? <span className="text-green-600 font-bold text-base">✓</span>
-                                : <span className="text-muted-foreground text-base">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Legend */}
-            {isAdmin && (
-              <div className="flex flex-wrap items-center gap-4 pt-2 text-xs text-muted-foreground border-t">
-                <div className="flex items-center gap-1.5">
-                  <div className="h-4 w-7 bg-primary/20 rounded-full relative">
-                    <div className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-primary" />
-                  </div>
-                  Permission granted
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="h-4 w-7 bg-muted rounded-full relative">
-                    <div className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-muted-foreground/40" />
-                  </div>
-                  Permission denied
-                </div>
-                <div className="flex items-center gap-1.5 opacity-50">
-                  <div className="h-4 w-7 bg-primary/20 rounded-full relative">
-                    <div className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-primary" />
-                  </div>
-                  Locked (Admin always has access)
-                </div>
-              </div>
-            )}
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
           </div>
         </TabsContent>
 
         {/* ─── Social Accounts Tab ──────────────────────────────────────────────── */}
         <TabsContent value="social" className="mt-5">
-          <div className="card-soft p-5 space-y-4 max-w-2xl">
-            <div>
-              <div className="font-semibold text-lg">Connected Social Accounts</div>
-              <div className="text-sm text-muted-foreground mt-1 mb-4">
-                Connect your client's social media profiles to enable direct publishing and analytics.
+          <div className="space-y-4 max-w-2xl">
+            <div className="card-soft p-4 sm:p-5">
+              <div className="font-semibold text-lg mb-1">Connected Social Accounts</div>
+              <div className="text-sm text-muted-foreground">
+                Connect your social media profiles to enable direct publishing and analytics.
               </div>
             </div>
 
-            <div className="space-y-4 mt-4">
-              {/* Meta / Instagram */}
-              <div className="flex items-center justify-between p-4 border rounded-xl bg-background">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
-                    Ig
-                  </div>
-                  <div>
-                    <div className="font-semibold">Instagram / Facebook</div>
-                    <div className="text-xs text-muted-foreground">Not connected</div>
-                  </div>
-                </div>
-                <Button variant="outline" className="rounded-xl h-9 text-xs" onClick={() => toast("OAuth flow for Meta would start here.")}>
-                  Connect
-                </Button>
-              </div>
-
-              {/* LinkedIn */}
-              <div className="flex items-center justify-between p-4 border rounded-xl bg-background">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-[#0A66C2] rounded-lg flex items-center justify-center text-white font-bold">
-                    in
-                  </div>
-                  <div>
-                    <div className="font-semibold">LinkedIn Pages</div>
-                    <div className="text-xs text-muted-foreground">Not connected</div>
-                  </div>
-                </div>
-                <Button variant="outline" className="rounded-xl h-9 text-xs" onClick={() => toast("OAuth flow for LinkedIn would start here.")}>
-                  Connect
-                </Button>
-              </div>
-
-              {/* X / Twitter */}
-              <div className="flex items-center justify-between p-4 border rounded-xl bg-background">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-black rounded-lg flex items-center justify-center text-white font-bold">
-                    𝕏
-                  </div>
-                  <div>
-                    <div className="font-semibold">X (Twitter)</div>
-                    <div className="text-xs text-muted-foreground">Not connected</div>
-                  </div>
-                </div>
-                <Button variant="outline" className="rounded-xl h-9 text-xs" onClick={() => toast("OAuth flow for X would start here.")}>
-                  Connect
-                </Button>
-              </div>
+            <div className="grid grid-cols-1 gap-3">
+              {[
+                { name: "Instagram / Facebook", sub: "Meta Business Suite", icon: "Ig", gradient: "from-yellow-400 via-pink-500 to-purple-600", toast: "OAuth flow for Meta would start here." },
+                { name: "LinkedIn Pages", sub: "LinkedIn Marketing", icon: "in", bg: "#0A66C2", toast: "OAuth flow for LinkedIn would start here." },
+                { name: "X (Twitter)", sub: "X Developer Platform", icon: "𝕏", bg: "#000000", toast: "OAuth flow for X would start here." },
+                { name: "YouTube", sub: "Google OAuth", icon: "▶", bg: "#EF4444", toast: "OAuth flow for YouTube would start here." },
+              ].map((acc) => (
+                <Card key={acc.name} className="border border-border shadow-none rounded-2xl">
+                  <CardContent className="p-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-lg shrink-0 ${acc.gradient ? `bg-gradient-to-tr ${acc.gradient}` : ""}`}
+                        style={acc.bg ? { background: acc.bg } : {}}
+                      >
+                        {acc.icon}
+                      </div>
+                      <div>
+                        <div className="font-semibold">{acc.name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{acc.sub}</div>
+                        <Badge variant="outline" className="text-[10px] font-medium mt-1.5 text-amber-600 border-amber-200 bg-amber-50">Not connected</Badge>
+                      </div>
+                    </div>
+                    <Button variant="outline" className="rounded-xl h-9 text-xs shrink-0" onClick={() => toast(acc.toast)}>
+                      Connect
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            
-            <div className="text-xs text-muted-foreground bg-muted p-3 rounded-lg flex items-start gap-2 mt-4">
-              <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>We use secure OAuth 2.0 to connect to social platforms. SocialNxt does not store your passwords.</span>
+
+            <div className="text-xs text-muted-foreground bg-muted/60 border border-border p-4 rounded-xl flex items-start gap-2.5">
+              <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
+              <span>We use <strong>secure OAuth 2.0</strong> to connect to social platforms. SocialNxt never stores your passwords.</span>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ─── Platforms Tab ─────────────────────────────────────────────────── */}
+        <TabsContent value="platforms" className="mt-5">
+          <div className="card-soft p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+              <div>
+                <div className="font-semibold text-lg">Platforms</div>
+                <div className="text-sm text-muted-foreground">Manage social media and real estate platforms available in Content Sheets.</div>
+              </div>
+              {isAdmin && (
+                <Button
+                  className="rounded-xl h-9"
+                  onClick={() => {
+                    const name = prompt("Platform Name (e.g. 99acres):");
+                    if (!name) return;
+                    const category = prompt("Category (e.g. Real Estate):") || "Other";
+                    const urlPattern = prompt("URL Pattern (e.g. 99acres.com):") || "";
+                    const newPlatforms = [...(workspace?.customPlatforms || []), { name, category, urlPattern }];
+                    updateWorkspace.mutate(
+                      { workspace_id: workspace!.workspaceId, custom_platforms: newPlatforms },
+                      { onSuccess: () => toast.success("Platform added") }
+                    );
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-2" /> Add New Platform
+                </Button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[600px]">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                    <th className="px-3 py-3 font-semibold">Platform Name</th>
+                    <th className="px-3 py-3 font-semibold">Category</th>
+                    <th className="px-3 py-3 font-semibold">URL Pattern</th>
+                    <th className="px-3 py-3 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok"].map((p) => (
+                    <tr key={p} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                      <td className="px-3 py-3 font-medium">{p}</td>
+                      <td className="px-3 py-3 text-muted-foreground text-xs">Default Social</td>
+                      <td className="px-3 py-3 text-muted-foreground text-xs">—</td>
+                      <td className="px-3 py-3 text-right">
+                        <Badge variant="outline" className="text-[10px] font-medium text-muted-foreground">Default</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                  {workspace?.customPlatforms?.map((p, i) => (
+                    <tr key={i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                      <td className="px-3 py-3 font-medium">{p.name}</td>
+                      <td className="px-3 py-3 text-muted-foreground text-xs">{p.category}</td>
+                      <td className="px-3 py-3 text-muted-foreground text-xs">{p.urlPattern || "—"}</td>
+                      <td className="px-3 py-3 text-right">
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              if (!confirm(`Remove ${p.name}?`)) return;
+                              const newPlatforms = workspace.customPlatforms.filter((_, idx) => idx !== i);
+                              updateWorkspace.mutate(
+                                { workspace_id: workspace.workspaceId, custom_platforms: newPlatforms },
+                                { onSuccess: () => toast.success("Platform removed") }
+                              );
+                            }}
+                            className="text-xs text-red-500 hover:underline"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </TabsContent>
 
         {/* ─── Company Settings Tab ────────────────────────────────────────────── */}
         <TabsContent value="company" className="mt-5">
-          <div className="card-soft p-5 space-y-4 max-w-xl">
-            <div>
-              <Label>Workspace name</Label>
-              <Input
-                className="mt-1.5 rounded-xl h-11"
-                value={companyName || workspace?.workspaceName || ""}
-                onChange={(e) => setCompanyName(e.target.value)}
-                disabled={!isAdmin}
-              />
-            </div>
-            <div>
-              <Label>Your email</Label>
-              <Input className="mt-1.5 rounded-xl h-11" value={workspace?.userEmail || ""} disabled />
-            </div>
-            <div>
-              <Label>Your role</Label>
-              <Input className="mt-1.5 rounded-xl h-11" value={workspace?.role || ""} disabled />
-            </div>
-            <div>
-              <Label>Total members</Label>
-              <Input className="mt-1.5 rounded-xl h-11" value={members.length} disabled />
-            </div>
-            <div>
-              <Label>Support email</Label>
-              <Input
-                className="mt-1.5 rounded-xl h-11"
-                placeholder="hello@youragency.in"
-                value={supportEmail}
-                onChange={(e) => setSupportEmail(e.target.value)}
-                disabled={!isAdmin}
-              />
-            </div>
-            {isAdmin && (
-              <>
-                <Button className="rounded-xl h-10 mt-2" onClick={handleSaveCompanySettings} disabled={isSaving}>
-                  {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Save changes
-                </Button>
+          <div className="space-y-4 max-w-2xl">
+            {/* Workspace profile card */}
+            <Card className="border border-border shadow-none rounded-2xl">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Workspace Profile</CardTitle>
+                <CardDescription>Update your agency's workspace details.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Workspace name</Label>
+                  <Input
+                    className="mt-1.5 rounded-xl h-11"
+                    value={companyName || workspace?.workspaceName || ""}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    disabled={!isAdmin}
+                    placeholder="e.g. My Agency"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Support email</Label>
+                  <Input
+                    className="mt-1.5 rounded-xl h-11"
+                    placeholder="hello@youragency.in"
+                    value={supportEmail}
+                    onChange={(e) => setSupportEmail(e.target.value)}
+                    disabled={!isAdmin}
+                  />
+                </div>
+                {isAdmin && (
+                  <Button className="rounded-xl h-10" onClick={handleSaveCompanySettings} disabled={isSaving}>
+                    {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                    Save changes
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
 
-                <div className="pt-8 mt-8 border-t border-red-100 space-y-3">
-                  <div className="font-semibold text-red-600">Danger Zone</div>
-                  <div className="text-sm text-muted-foreground">
-                    Permanently delete this workspace and all its data (clients, posts, issues, deals, etc). This action cannot be undone.
+            {/* Your account info */}
+            <Card className="border border-border shadow-none rounded-2xl">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Your Account</CardTitle>
+                <CardDescription>Read-only information about your account in this workspace.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Email</Label>
+                  <div className="mt-1 font-medium text-sm">{workspace?.userEmail || "—"}</div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Role</Label>
+                  <div className="mt-1">
+                    <Badge className={`font-semibold border-0 capitalize ${ROLE_COLORS[workspace?.role || ""] || "bg-muted text-foreground/70"}`}>
+                      {workspace?.role || "—"}
+                    </Badge>
                   </div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Total members</Label>
+                  <div className="mt-1 font-medium text-sm">{members.length}</div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Danger zone */}
+            {isAdmin && (
+              <Card className="border border-red-200 shadow-none rounded-2xl bg-red-50/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base text-red-700">Danger Zone</CardTitle>
+                  <CardDescription className="text-red-600/80">
+                    Permanently delete this workspace and all its data (clients, posts, issues, deals, etc). This action cannot be undone.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
                   <Button variant="destructive" className="rounded-xl h-10" onClick={handleDeleteWorkspace} disabled={isDeleting}>
                     {isDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                     Delete Workspace
                   </Button>
-                </div>
-              </>
+                </CardContent>
+              </Card>
             )}
           </div>
         </TabsContent>
-
       </Tabs>
     </AppShell>
   );

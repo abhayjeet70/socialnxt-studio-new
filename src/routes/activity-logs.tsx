@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
-import { usePosts, useCurrentWorkspace, useWorkspaceMembers, useIssues } from "@/lib/queries";
+import { usePosts, useCurrentWorkspace, useWorkspaceMembers, useIssues, useQuotations } from "@/lib/queries";
 import { useState, useMemo } from "react";
 import {
   UploadCloud, Link as LinkIcon, FileText, CheckCircle2,
@@ -48,8 +48,9 @@ function ActivityLogsPage() {
   const { data: posts = [], isLoading: postsLoading } = usePosts(workspace?.workspaceId);
   const { data: members = [], isLoading: membersLoading } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: issues = [], isLoading: issuesLoading } = useIssues(workspace?.workspaceId);
+  const { data: allQuotations = [], isLoading: invoicesLoading } = useQuotations(workspace?.workspaceId);
 
-  const isLoading = postsLoading || membersLoading || issuesLoading;
+  const isLoading = postsLoading || membersLoading || issuesLoading || invoicesLoading;
 
   const [range, setRange] = useState<RangeOption>("week");
   const [customFrom, setCustomFrom] = useState("");
@@ -61,6 +62,8 @@ function ActivityLogsPage() {
 
   // Build all activity entries from posts, deals, and proposals
   const allActivities = useMemo(() => {
+    // Filter to invoices only (INV- prefix)
+    const invoices = allQuotations.filter(q => q.quotation_number?.startsWith("INV-"));
     // 1. Post Events
     const filteredPosts = isClient
       ? posts.filter(p => p.client_name?.toLowerCase() === clientName.toLowerCase())
@@ -180,9 +183,48 @@ function ActivityLogsPage() {
       return events;
     }).flat();
 
-    return [...postEvents, ...issueEvents]
+    // Invoice Events
+    const filteredInvoices = isClient
+      ? invoices.filter(q => q.client_name?.toLowerCase() === clientName.toLowerCase())
+      : invoices;
+
+    const invoiceEvents = filteredInvoices.flatMap((q) => {
+      const creatorMember = members.find((m) => m.user_id === q.created_by);
+      const who = creatorMember?.users?.full_name || creatorMember?.users?.email?.split("@")[0] || "System";
+      const events: any[] = [];
+
+      events.push({
+        ts: new Date(q.created_at),
+        who,
+        action: "created invoice",
+        subject: q.quotation_number,
+        client: q.client_name || "-",
+        platform: "Billing",
+        icon: Receipt,
+        color: "bg-violet-100 text-violet-700",
+        extra: `Status: ${q.status}`,
+      });
+
+      if (q.updated_at && q.updated_at !== q.created_at) {
+        events.push({
+          ts: new Date(q.updated_at),
+          who,
+          action: "updated invoice",
+          subject: q.quotation_number,
+          client: q.client_name || "-",
+          platform: "Billing",
+          icon: Receipt,
+          color: "bg-amber-100 text-amber-700",
+          extra: `Status: ${q.status}`,
+        });
+      }
+
+      return events;
+    });
+
+    return [...postEvents, ...issueEvents, ...invoiceEvents]
       .sort((a, b) => b.ts.getTime() - a.ts.getTime());
-  }, [posts, issues, members, isClient, clientName]);
+  }, [posts, issues, allQuotations, members, isClient, clientName]);
 
   const filteredActivities = useMemo(() => {
     const now = new Date();

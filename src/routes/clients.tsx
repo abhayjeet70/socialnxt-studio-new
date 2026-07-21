@@ -1,5 +1,5 @@
 import { createFileRoute, Link as RouterLink, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +61,12 @@ function ClientsPage() {
   const createClient = useCreateClient();
   const updateClient = useUpdateClient();
   const deleteClient = useDeleteClient();
+
+  const allWorkspacePlatforms = useMemo(() => {
+    const defaultPlats = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok", "Twitter"];
+    const customPlats = workspace?.customPlatforms?.map(p => p.name) || [];
+    return Array.from(new Set([...defaultPlats, ...customPlats]));
+  }, [workspace?.customPlatforms]);
 
   const isLoading = isLoadingClients || isLoadingMembers;
   const isAdmin = workspace?.role === "admin" || workspace?.role === "employee";
@@ -252,7 +258,7 @@ function ClientsPage() {
 
   const getClientFinancials = (clientName: string) => {
     const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === clientName.toLowerCase());
-    const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+    const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0);
     const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
     const pendingPayment = totalRevenue - advancePaid;
     return { totalRevenue, advancePaid, pendingPayment };
@@ -362,7 +368,7 @@ function ClientsPage() {
               <div className="space-y-2">
                 <Label>Active Platforms</Label>
                 <div className="flex flex-wrap gap-2">
-                  {PLATFORMS.map((p) => {
+                  {allWorkspacePlatforms.map((p) => {
                     const isSelected = selectedPlatforms.includes(p);
                     return (
                       <Badge
@@ -494,7 +500,7 @@ function ClientsPage() {
             <div className="space-y-2">
               <Label>Active Platforms</Label>
               <div className="flex flex-wrap gap-2">
-                {PLATFORMS.map((p) => {
+                {allWorkspacePlatforms.map((p) => {
                   const isSelected = editPlatforms.includes(p);
                   return (
                     <Badge
@@ -728,7 +734,7 @@ function ClientsPage() {
               <>
                 {sortedClients.map((c) => {
                   const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === c.name.toLowerCase());
-                  const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+                  const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0);
                   const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
                   const pendingPayment = totalRevenue - advancePaid;
                   // Simple two-status rule: Closed or Inactive = inactive; everything else = active

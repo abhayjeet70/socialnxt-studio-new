@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
-import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useWorkspaceMembers, useIssues } from "@/lib/queries";
+import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useWorkspaceMembers, useIssues, useQuotations } from "@/lib/queries";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -162,6 +162,8 @@ export function AppShell({ children, title, subtitle, actions }: {
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: posts = [] } = usePosts(workspace?.workspaceId);
   const { data: issues = [] } = useIssues(workspace?.workspaceId);
+  const { data: allQuotations = [] } = useQuotations(workspace?.workspaceId);
+  const invoices = allQuotations.filter(q => q.quotation_number?.startsWith("INV-"));
 
   const query = globalSearch.toLowerCase();
   
@@ -215,10 +217,28 @@ export function AppShell({ children, title, subtitle, actions }: {
       color: i.status === "Resolved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700",
       icon: AlertOctagon,
       link: "/issues",
+    })),
+    ...invoices.slice(0, 5).map(q => ({
+      ts: q.created_at,
+      who: q.client_name || "Someone",
+      action: "created invoice",
+      subject: q.quotation_number,
+      color: "bg-violet-100 text-violet-700",
+      icon: Receipt,
+      link: "/clients",
+    })),
+    ...invoices.filter(q => q.updated_at && q.updated_at !== q.created_at).slice(0, 5).map(q => ({
+      ts: q.updated_at,
+      who: q.client_name || "Someone",
+      action: "updated invoice",
+      subject: q.quotation_number,
+      color: "bg-amber-100 text-amber-700",
+      icon: Receipt,
+      link: "/clients",
     }))
   ]
     .sort((a, b) => new Date(b.ts ?? 0).getTime() - new Date(a.ts ?? 0).getTime())
-    .slice(0, 5);
+    .slice(0, 10);
 
   const handleEditProfile = () => {
     setEditName(workspace?.userFullName || "");
@@ -458,8 +478,8 @@ export function AppShell({ children, title, subtitle, actions }: {
           </div>
         </header>
 
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 lg:py-8 pb-24 lg:pb-8">
-          <div className="flex flex-row flex-wrap justify-between items-end gap-y-4 gap-x-8 mb-6">
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 lg:py-8 pb-24 lg:pb-8 flex flex-col">
+          <div className="flex flex-row flex-wrap justify-between items-end gap-y-4 gap-x-8 mb-6 shrink-0">
             <div className="flex-1 min-w-[280px]">
               <h1 className="text-2xl sm:text-[28px] font-bold tracking-tight text-foreground">{title}</h1>
               {/* Subtitle hidden on mobile to prevent layout overflow */}

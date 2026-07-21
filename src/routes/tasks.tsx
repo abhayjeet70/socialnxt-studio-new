@@ -234,6 +234,12 @@ function TasksPage() {
   });
   const allClientNames = Array.from(clientNamesSet).sort();
 
+  const allWorkspacePlatforms = useMemo(() => {
+    const defaultPlats = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok"];
+    const customPlats = workspace?.customPlatforms?.map(p => p.name) || [];
+    return [...defaultPlats, ...customPlats];
+  }, [workspace?.customPlatforms]);
+
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>("All Clients");
   const [selectedPlatformFilter, setSelectedPlatformFilter] = useState<string>("All Platforms");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("All Status");
@@ -524,7 +530,7 @@ function TasksPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="All Platforms">All Platforms</SelectItem>
-                {PLATFORMS.map(p => (
+                {allWorkspacePlatforms.map(p => (
                   <SelectItem key={p} value={p}>{p}</SelectItem>
                 ))}
               </SelectContent>
@@ -602,11 +608,11 @@ function TasksPage() {
         </div>
       }
     >
-      <div className="card-soft overflow-hidden">
+      <div className="card-soft flex-1 flex flex-col overflow-hidden min-h-[500px]">
         {isLoading ? (
           <div className="py-20 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto flex-1 relative">
             <table className="w-full text-sm text-left border-collapse min-w-[1200px]" style={{ tableLayout: "fixed" }}>
               <thead className="bg-primary text-white">
                 <tr>
@@ -616,8 +622,8 @@ function TasksPage() {
                   <ResizableHeader label="PLATFORM" defaultWidth={140} />
                   <ResizableHeader label="CONTENT TYPE" defaultWidth={128} />
                   <ResizableHeader label="TOPIC" defaultWidth={192} />
-                  <ResizableHeader label="REFERENCE CONTENT" defaultWidth={256} />
-                  <ResizableHeader label="COMPLETED CONTENT" defaultWidth={256} />
+                  <ResizableHeader label="REFERENCE CONTENT" defaultWidth={320} />
+                  <ResizableHeader label="COMPLETED CONTENT" defaultWidth={320} />
                   <ResizableHeader label="ASSIGNED TO" defaultWidth={160} />
                   <ResizableHeader label="SCHEDULED TIME" defaultWidth={160} />
                   <ResizableHeader label="STATUS" defaultWidth={128} className="text-center" />
@@ -626,7 +632,7 @@ function TasksPage() {
               </thead>
               <tbody>
                 {pagedPosts.map((post, idx) => (
-                  <TaskRow key={post.id} post={post} index={safePage * PAGE_SIZE + idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} selectedClientFilter={selectedClientFilter} customColumns={customColumns} setLightboxImage={setLightboxImage} clients={clients} />
+                  <TaskRow key={post.id} post={post} index={safePage * PAGE_SIZE + idx} isClient={isClient} allClientNames={allClientNames} members={members} setUndoAction={setUndoAction} selectedClientFilter={selectedClientFilter} customColumns={customColumns} setLightboxImage={setLightboxImage} clients={clients} allWorkspacePlatforms={allWorkspacePlatforms} />
                 ))}
                 {sortedPosts.length === 0 && (
                   <tr>
@@ -700,7 +706,7 @@ function ResizableHeader({ label, defaultWidth, className = "", onDelete }: { la
   }, [isResizing]);
 
   return (
-    <th className={`relative px-4 py-3 border-r border-white/20 font-semibold group ${className}`} style={{ width, minWidth: width, maxWidth: width }}>
+    <th className={`relative px-4 py-3 border-r border-white/20 font-semibold group ${className}`} style={{ width, minWidth: width }}>
       <div className="flex items-center justify-between">
         <span>{label}</span>
         {onDelete && (
@@ -730,6 +736,7 @@ function TaskRow({ post, index, isClient, allClientNames,
   customColumns,
   setLightboxImage,
   clients,
+  allWorkspacePlatforms,
 }: {
   post: Post;
   index: number;
@@ -741,6 +748,7 @@ function TaskRow({ post, index, isClient, allClientNames,
   customColumns: string[];
   setLightboxImage: (url: string | null) => void;
   clients: Client[];
+  allWorkspacePlatforms: string[];
 }) {
   const queryClient = useQueryClient();
   const { data: workspace } = useCurrentWorkspace();
@@ -907,7 +915,10 @@ function TaskRow({ post, index, isClient, allClientNames,
           value={post.platforms ?? (post.platform ? [post.platform] : [])}
           disabled={isClient}
           onChange={(vals) => updatePost.mutate({ id: post.id, updates: { platforms: vals } })}
-          availablePlatforms={clients.find(c => c.name === post.client_name)?.platforms ?? ALL_PLATFORMS}
+          availablePlatforms={Array.from(new Set([
+            ...(clients.find(c => c.name === post.client_name)?.platforms ?? []),
+            ...allWorkspacePlatforms,
+          ]))}
         />
       </td>
 

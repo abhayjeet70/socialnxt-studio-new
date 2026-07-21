@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { deleteAccount } from "@/server/invite";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -130,7 +132,7 @@ export function useCurrentWorkspace() {
 
       const { data, error } = await supabase
         .from("workspace_members")
-        .select("workspace_id, role, agency_role, workspaces(id, name)")
+        .select("workspace_id, role, agency_role, workspaces(id, name, custom_platforms)")
         .eq("user_id", user.id)
         .limit(1)
         .single();
@@ -143,6 +145,7 @@ export function useCurrentWorkspace() {
         role: data.role as string,
         agencyRole: data.agency_role as string || "Social Media Manager",
         workspaceName: (data.workspaces as unknown as { name: string })?.name ?? "My Workspace",
+        customPlatforms: (data.workspaces as unknown as { custom_platforms: { name: string; category: string; iconUrl?: string; urlPattern?: string }[] })?.custom_platforms || [],
         userId: user.id,
         userEmail: user.email,
         userFullName: fullName,
@@ -155,10 +158,13 @@ export function useCurrentWorkspace() {
 export function useUpdateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ workspace_id, name }: { workspace_id: string; name: string }) => {
+    mutationFn: async ({ workspace_id, name, custom_platforms }: { workspace_id: string; name?: string; custom_platforms?: any }) => {
+      const updates: any = {};
+      if (name !== undefined) updates.name = name;
+      if (custom_platforms !== undefined) updates.custom_platforms = custom_platforms;
       const { error } = await supabase
         .from("workspaces")
-        .update({ name })
+        .update(updates)
         .eq("id", workspace_id);
       if (error) throw error;
       return true;
@@ -762,6 +768,13 @@ export type Client = {
   id: string;
   workspace_id: string;
   name: string;
+  logo_url: string | null;
+  custom_platforms?: {
+    name: string;
+    category: string;
+    iconUrl?: string;
+    urlPattern?: string;
+  }[];
   email: string | null;
   industry: string | null;
   platforms: string[] | null;

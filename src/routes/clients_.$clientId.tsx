@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,6 +92,12 @@ function ClientDetailPage() {
   const { data: allQuotations = [] } = useQuotations(ws);
   const staffMembers = members.filter((m) => m.role === "employee");
 
+  const allWorkspacePlatforms = useMemo(() => {
+    const defaultPlats = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok", "Twitter"];
+    const customPlats = workspace?.customPlatforms?.map(p => p.name) || [];
+    return Array.from(new Set([...defaultPlats, ...customPlats]));
+  }, [workspace?.customPlatforms]);
+
   const addSocial = useAddClientSocial();
   const delSocial = useDeleteClientSocial();
   const updateStatus = useUpdatePostStatus();
@@ -166,7 +172,7 @@ function ClientDetailPage() {
   const clientIssues = issues.filter((i: any) => (i.client_name || "").toLowerCase() === name.toLowerCase());
 
   const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === name.toLowerCase());
-  const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0);
   const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
   const pendingPayment = totalRevenue - advancePaid;
 
@@ -195,7 +201,11 @@ function ClientDetailPage() {
 
   const handleLogin = async (s: (typeof socials)[number]) => {
     const url = s.login_url || s.profile_url || PLATFORM_LOGIN_URL[s.platform] || "";
-    const bits = [s.username, s.secret].filter(Boolean).join("  /  ");
+    let decodedSecret = s.secret;
+    if (s.secret) {
+        try { decodedSecret = atob(s.secret); } catch (e) { /* ignore if not valid base64 */ }
+    }
+    const bits = [s.username, decodedSecret].filter(Boolean).join("  /  ");
     if (bits) {
       try { await navigator.clipboard.writeText(bits); toast.success("Login copied — paste on the platform"); } catch { /* ignore */ }
     }
@@ -205,8 +215,38 @@ function ClientDetailPage() {
 
   const addHandle = () => {
     if (!ws) return;
+    
+    if (!sPlatform || !sHandle || !sUser) {
+      toast.error("Platform, Handle, and Login username are required");
+      return;
+    }
+    if (/\s/.test(sHandle)) {
+      toast.error("Handle cannot contain spaces");
+      return;
+    }
+    if (sHandle.length > 50) {
+      toast.error("Handle must be 50 characters or less");
+      return;
+    }
+    if (socials.some(s => s.platform === sPlatform)) {
+      toast.error(`A handle for ${sPlatform} already exists`);
+      return;
+    }
+
+    let finalUrl = sUrl;
+    if (!finalUrl && sHandle) {
+        if (sPlatform === 'Instagram') finalUrl = `https://instagram.com/${sHandle}`;
+        else if (sPlatform === 'Facebook') finalUrl = `https://facebook.com/${sHandle}`;
+        else if (sPlatform === 'LinkedIn') finalUrl = `https://linkedin.com/company/${sHandle}`;
+        else if (sPlatform === 'Twitter' || sPlatform === 'X') finalUrl = `https://twitter.com/${sHandle}`;
+        else if (sPlatform === 'TikTok') finalUrl = `https://tiktok.com/@${sHandle}`;
+        else if (sPlatform === 'YouTube') finalUrl = `https://youtube.com/@${sHandle}`;
+    }
+
+    const encodedSecret = sSecret ? btoa(sSecret) : null;
+
     addSocial.mutate(
-      { workspace_id: ws, client_id: client.id, platform: sPlatform, handle: sHandle || null, profile_url: sUrl || null, login_url: PLATFORM_LOGIN_URL[sPlatform] || null, username: sUser || null, secret: sSecret || null },
+      { workspace_id: ws, client_id: client.id, platform: sPlatform, handle: sHandle, profile_url: finalUrl || null, login_url: PLATFORM_LOGIN_URL[sPlatform] || null, username: sUser, secret: encodedSecret },
       {
         onSuccess: () => {
           toast.success("Handle added");
@@ -655,7 +695,7 @@ function ClientDetailPage() {
                         <div className="text-xs text-muted-foreground truncate">{new Date(d.created_at).toLocaleDateString()}</div>
                       </div>
                       <div className="text-right mr-4">
-                        <div className="text-sm font-bold text-primary">₹{(d.amount || 0).toLocaleString("en-IN")}</div>
+                        <div className="text-sm font-bold text-primary">₹{((d.amount || 0) * 1.18).toLocaleString("en-IN")}</div>
                         <div className="text-[10px] text-muted-foreground">Adv: ₹{(d.advance_paid || 0).toLocaleString("en-IN")}</div>
                       </div>
                       {isStaff && (
@@ -753,15 +793,15 @@ function ClientDetailPage() {
               <Label>Platform</Label>
               <Select value={sPlatform} onValueChange={setSPlatform}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{PLATFORMS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+                <SelectContent>{allWorkspacePlatforms.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Handle</Label><Input value={sHandle} onChange={(e) => setSHandle(e.target.value)} placeholder="@brandx" /></div>
-            <div className="space-y-1.5"><Label>Profile URL</Label><Input value={sUrl} onChange={(e) => setSUrl(e.target.value)} placeholder="https://instagram.com/brandx" /></div>
-            <div className="space-y-1.5"><Label>Login username / email</Label><Input value={sUser} onChange={(e) => setSUser(e.target.value)} placeholder="brandx@email.com" /></div>
+            <div className="space-y-1.5"><Label>Handle</Label><Input value={sHandle} onChange={(e) => setSHandle(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Profile URL</Label><Input value={sUrl} onChange={(e) => setSUrl(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Login username / email</Label><Input value={sUser} onChange={(e) => setSUser(e.target.value)} /></div>
             <div className="space-y-1.5">
               <Label>Password / note <span className="text-muted-foreground font-normal">(optional, internal)</span></Label>
-              <Input value={sSecret} onChange={(e) => setSSecret(e.target.value)} placeholder="stored for quick paste" />
+              <Input value={sSecret} onChange={(e) => setSSecret(e.target.value)} />
             </div>
           </div>
           <DialogFooter className="gap-2 pt-2">
@@ -820,7 +860,7 @@ function ClientDetailPage() {
             <div className="space-y-2 pt-2">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Services (Platforms)</Label>
               <div className="flex flex-wrap gap-2">
-                {PLATFORMS.map(p => {
+                {allWorkspacePlatforms.map(p => {
                   const isSelected = editPlatforms.includes(p);
                   return (
                     <Badge
@@ -875,8 +915,8 @@ function ClientDetailPage() {
             {/* Summary Block */}
             <div className="flex items-center justify-around px-4 py-5 rounded-xl border border-emerald-100 bg-white shadow-sm">
               <div className="flex flex-col items-center">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Total</span>
-                <span className="text-xl font-extrabold text-foreground">₹{dealAmount.toLocaleString('en-IN')}</span>
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Total (Inc. Tax)</span>
+                <span className="text-xl font-extrabold text-foreground">₹{(dealAmount * 1.18).toLocaleString('en-IN')}</span>
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[11px] font-bold text-primary uppercase tracking-widest mb-1">Paid</span>
@@ -884,7 +924,7 @@ function ClientDetailPage() {
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[11px] font-bold text-orange-500 uppercase tracking-widest mb-1">Balance</span>
-                <span className="text-xl font-extrabold text-orange-500">₹{Math.max(0, dealAmount - dealAdvance).toLocaleString('en-IN')}</span>
+                <span className="text-xl font-extrabold text-orange-500">₹{Math.max(0, (dealAmount * 1.18) - dealAdvance).toLocaleString('en-IN')}</span>
               </div>
             </div>
 
@@ -934,7 +974,7 @@ function ClientDetailPage() {
                 </div>
 
                 <div className="flex gap-3 justify-end pt-2">
-                  <Button type="button" variant="outline" className="h-10 px-4 rounded-lg border-border text-foreground hover:bg-muted font-medium" onClick={() => setDealAdvance(dealAmount)}>Full balance</Button>
+                  <Button type="button" variant="outline" className="h-10 px-4 rounded-lg border-border text-foreground hover:bg-muted font-medium" onClick={() => setDealAdvance(dealAmount * 1.18)}>Full balance</Button>
                   <Button type="submit" className="h-10 px-5 rounded-lg bg-[#0F4C3A] hover:bg-[#0F4C3A]/90 text-white font-medium" disabled={createDeal.isPending || updateDeal.isPending}>
                     {createDeal.isPending || updateDeal.isPending ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
                     {dealTarget ? "Update record" : "Add record"}
@@ -973,6 +1013,7 @@ function ClientDetailPage() {
                 <Button variant="outline" onClick={() => setInvoiceOpen(false)}>Cancel</Button>
                 <Button onClick={() => {
                   if (!ws || !workspace?.userId) return;
+                  if (!window.confirm(`Are you sure you want to ${editingInvoice ? "update" : "save"} this invoice?`)) return;
                   const payload = {
                     ...invoiceForm,
                     workspace_id: ws,
@@ -1007,11 +1048,11 @@ function ClientDetailPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Issue Date</Label>
-                    <Input type="date" value={invoiceForm.issue_date?.split("T")[0] || ""} onChange={(e) => setInvoiceForm({ ...invoiceForm, issue_date: new Date(e.target.value).toISOString() })} />
+                    <Input type="date" value={invoiceForm.issue_date?.split("T")[0] || ""} max={invoiceForm.valid_until?.split("T")[0]} onChange={(e) => setInvoiceForm({ ...invoiceForm, issue_date: new Date(e.target.value).toISOString() })} />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Due Date</Label>
-                    <Input type="date" value={invoiceForm.valid_until?.split("T")[0] || ""} onChange={(e) => setInvoiceForm({ ...invoiceForm, valid_until: new Date(e.target.value).toISOString() })} />
+                    <Input type="date" value={invoiceForm.valid_until?.split("T")[0] || ""} min={invoiceForm.issue_date?.split("T")[0] || new Date().toISOString().split("T")[0]} onChange={(e) => setInvoiceForm({ ...invoiceForm, valid_until: new Date(e.target.value).toISOString() })} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1029,7 +1070,30 @@ function ClientDetailPage() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Tax Rate (%)</Label>
-                    <Input type="number" value={invoiceForm.tax_rate} onChange={(e) => setInvoiceForm({ ...invoiceForm, tax_rate: parseFloat(e.target.value) || 0 })} />
+                    <Input type="number" min="0" max="100" value={invoiceForm.tax_rate} onChange={(e) => setInvoiceForm({ ...invoiceForm, tax_rate: Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)) })} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bill To Details */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-sm border-b pb-2">Bill To Details</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Client GSTIN</Label>
+                    <Input
+                      value={invoiceForm.extra_fields?.client_gstin || ""}
+                      onChange={(e) => setInvoiceForm({ ...invoiceForm, extra_fields: { ...invoiceForm.extra_fields, client_gstin: e.target.value } })}
+                      placeholder="e.g. 27AAPFU0939F1ZV"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Place of Supply</Label>
+                    <Input
+                      value={invoiceForm.extra_fields?.place_of_supply || ""}
+                      onChange={(e) => setInvoiceForm({ ...invoiceForm, extra_fields: { ...invoiceForm.extra_fields, place_of_supply: e.target.value } })}
+                      placeholder="e.g. Maharashtra"
+                    />
                   </div>
                 </div>
               </div>
@@ -1041,15 +1105,15 @@ function ClientDetailPage() {
                 </div>
                 {invoiceForm.line_items.map((item: any, idx: number) => (
                   <div key={idx} className="p-3 bg-gray-50 border rounded-lg space-y-3 relative group">
-                    <button className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => { const nl = [...invoiceForm.line_items]; nl.splice(idx, 1); setInvoiceForm({ ...invoiceForm, line_items: nl }); }}><X className="h-3 w-3" /></button>
+                    <button className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1 shadow-sm transition-transform hover:scale-110" onClick={() => { const nl = [...invoiceForm.line_items]; nl.splice(idx, 1); setInvoiceForm({ ...invoiceForm, line_items: nl }); }}><X className="h-3 w-3" /></button>
                     <div>
                       <Label className="text-[10px] uppercase text-muted-foreground">Description</Label>
                       <Input value={item.description} onChange={(e) => { const nl = [...invoiceForm.line_items]; nl[idx].description = e.target.value; setInvoiceForm({ ...invoiceForm, line_items: nl }); }} className="h-8 text-sm bg-white" />
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2 items-end">
                       <div>
                         <Label className="text-[10px] uppercase text-muted-foreground">Qty</Label>
-                        <Input type="number" value={item.qty} onChange={(e) => { const nl = [...invoiceForm.line_items]; nl[idx].qty = parseFloat(e.target.value) || 0; setInvoiceForm({ ...invoiceForm, line_items: nl }); }} className="h-8 text-sm bg-white" />
+                        <Input type="number" min="1" value={item.qty} onChange={(e) => { const nl = [...invoiceForm.line_items]; nl[idx].qty = Math.max(1, parseFloat(e.target.value) || 1); setInvoiceForm({ ...invoiceForm, line_items: nl }); }} className="h-8 text-sm bg-white" />
                       </div>
                       <div>
                         <Label className="text-[10px] uppercase text-muted-foreground">Unit</Label>
@@ -1057,11 +1121,56 @@ function ClientDetailPage() {
                       </div>
                       <div>
                         <Label className="text-[10px] uppercase text-muted-foreground">Price</Label>
-                        <Input type="number" value={item.unit_price} onChange={(e) => { const nl = [...invoiceForm.line_items]; nl[idx].unit_price = parseFloat(e.target.value) || 0; setInvoiceForm({ ...invoiceForm, line_items: nl }); }} className="h-8 text-sm bg-white" />
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
+                          <Input type="number" min="0" value={item.unit_price} onChange={(e) => { const nl = [...invoiceForm.line_items]; nl[idx].unit_price = Math.max(0, parseFloat(e.target.value) || 0); setInvoiceForm({ ...invoiceForm, line_items: nl }); }} className="h-8 text-sm bg-white pl-6" />
+                        </div>
+                      </div>
+                      <div className="flex flex-col justify-end h-8 pb-1">
+                        <Label className="text-[10px] uppercase text-muted-foreground mb-1 text-right">Total</Label>
+                        <div className="text-xs font-semibold text-right">₹{((item.qty || 0) * (item.unit_price || 0)).toLocaleString("en-IN")}</div>
                       </div>
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* Summary Calculations */}
+              <div className="bg-gray-50 p-4 rounded-xl space-y-2 border">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="font-medium">₹{(invoiceForm.line_items.reduce((acc: number, item: any) => acc + (item.qty || 0) * (item.unit_price || 0), 0)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Tax ({invoiceForm.tax_rate}%)</span>
+                  <span className="font-medium">₹{((invoiceForm.line_items.reduce((acc: number, item: any) => acc + (item.qty || 0) * (item.unit_price || 0), 0)) * (invoiceForm.tax_rate / 100)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-base font-bold pt-2 border-t">
+                  <span>Total Amount</span>
+                  <span className="text-primary">₹{((invoiceForm.line_items.reduce((acc: number, item: any) => acc + (item.qty || 0) * (item.unit_price || 0), 0)) * (1 + invoiceForm.tax_rate / 100)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* Company Details for Invoice */}
+              <div className="space-y-4 pt-4 border-t">
+                <h3 className="font-semibold text-sm">Company Contact Details</h3>
+                <p className="text-xs text-muted-foreground">These will appear in the invoice header.</p>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Address</Label>
+                    <Input value={invoiceForm.extra_fields?.company_address || ""} onChange={(e) => setInvoiceForm({ ...invoiceForm, extra_fields: { ...invoiceForm.extra_fields, company_address: e.target.value } })} placeholder="e.g. 123 Business St, City, State 123456" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Phone</Label>
+                      <Input value={invoiceForm.extra_fields?.company_phone || invoiceForm.extra_fields?.payment_phone || ""} onChange={(e) => setInvoiceForm({ ...invoiceForm, extra_fields: { ...invoiceForm.extra_fields, company_phone: e.target.value, payment_phone: e.target.value } })} placeholder="e.g. +91 9876543210" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Email</Label>
+                      <Input type="email" value={invoiceForm.extra_fields?.company_email || ""} onChange={(e) => setInvoiceForm({ ...invoiceForm, extra_fields: { ...invoiceForm.extra_fields, company_email: e.target.value } })} placeholder="e.g. billing@company.com" />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

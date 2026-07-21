@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import {
   useCurrentWorkspace,
@@ -48,6 +48,12 @@ function MediaPage() {
   const updateAsset = useUpdateMediaAsset();
   const { data: clientsList = [] } = useActiveClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
+
+  const allWorkspacePlatforms = useMemo(() => {
+    const defaultPlats = ["instagram", "facebook", "linkedin", "twitter", "tiktok"];
+    const customPlats = workspace?.customPlatforms?.map(p => p.name.toLowerCase()) || [];
+    return Array.from(new Set([...defaultPlats, ...customPlats]));
+  }, [workspace?.customPlatforms]);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -257,11 +263,9 @@ function MediaPage() {
             
             <select value={filterPlatform} onChange={(e) => setFilterPlatform(e.target.value)} className="h-10 rounded-xl bg-white border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
               <option value="all">All Platforms</option>
-              <option value="instagram">Instagram</option>
-              <option value="facebook">Facebook</option>
-              <option value="linkedin">LinkedIn</option>
-              <option value="twitter">Twitter</option>
-              <option value="tiktok">TikTok</option>
+              {allWorkspacePlatforms.map(p => (
+                <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+              ))}
             </select>
             
             {workspace?.role !== "client" && (
@@ -313,11 +317,9 @@ function MediaPage() {
               </select>
               <select value={uploadPlatform} onChange={(e) => setUploadPlatform(e.target.value)} className="h-9 rounded-lg bg-white border border-input px-3 text-xs focus:outline-none">
                 <option value="any">Any Platform</option>
-                <option value="instagram">Instagram</option>
-                <option value="facebook">Facebook</option>
-                <option value="linkedin">LinkedIn</option>
-                <option value="twitter">Twitter</option>
-                <option value="tiktok">TikTok</option>
+                {allWorkspacePlatforms.map(p => (
+                  <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                ))}
               </select>
               <input ref={inputRef} type="file" multiple accept="image/*,video/*" onChange={handleUpload} className="hidden" />
               <Button onClick={() => { if (selectedClient === "all") toast.error("Please select a client to upload for."); else inputRef.current?.click(); }} disabled={uploading || !workspace} className="rounded-lg h-9 text-xs">
@@ -440,7 +442,7 @@ function MediaPage() {
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-40">
-                      {["instagram", "facebook", "linkedin", "twitter", "tiktok"].map((plat) => {
+                      {allWorkspacePlatforms.map((plat) => {
                         const currentPlatforms = a.platform ? a.platform.split(",") : [];
                         const isSelected = currentPlatforms.includes(plat);
                         return (

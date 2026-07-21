@@ -63,6 +63,12 @@ function CalendarPage() {
   const { data: allPosts = [], isLoading: isLoadingPosts } = usePosts(workspace?.workspaceId);
   const { data: clients = [], isLoading: isLoadingClients } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
+  
+  const allWorkspacePlatforms = useMemo(() => {
+    const defaultPlats = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok", "Twitter"];
+    const customPlats = workspace?.customPlatforms?.map(p => p.name) || [];
+    return Array.from(new Set([...defaultPlats, ...customPlats]));
+  }, [workspace?.customPlatforms]);
   const updatePostStatus = useUpdatePostStatus();
   const createPost = useCreatePost();
   const isLoading = isLoadingPosts || isLoadingClients || isLoadingMembers;
@@ -285,12 +291,12 @@ function CalendarPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="All Platforms">All Platforms</SelectItem>
-                        {PLATFORMS.map((p) => (
+                        {allWorkspacePlatforms.map((p) => (
                           <SelectItem key={p} value={p}>
                             <div className="flex items-center gap-2">
                               <span
                                 className="h-4 w-4 rounded-full shrink-0 grid place-items-center text-white"
-                                style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] }}
+                                style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#6366f1" }}
                               >
                                 {getPlatformIcon(p, "w-2.5 h-2.5")}
                               </span>
@@ -345,11 +351,11 @@ function CalendarPage() {
 
             {/* Platform legend — hidden on mobile, shown on sm+ */}
             <div className="hidden sm:flex flex-wrap items-center gap-1.5 mb-4">
-              {PLATFORMS.map((p) => (
+              {allWorkspacePlatforms.map((p) => (
                 <span key={p} className="text-[11px] px-2 py-0.5 rounded-full bg-muted flex items-center gap-1.5">
                   <span
                     className="h-4 w-4 rounded-full shrink-0 grid place-items-center text-white"
-                    style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] }}
+                    style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#6366f1" }}
                   >
                     {getPlatformIcon(p, "w-2.5 h-2.5")}
                   </span>
