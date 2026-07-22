@@ -78,7 +78,8 @@ const ALL_PLATFORMS = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok"]
 function PlatformMultiSelect({ value, onChange, disabled, availablePlatforms }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean; availablePlatforms?: string[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const platforms = availablePlatforms && availablePlatforms.length > 0 ? availablePlatforms : ALL_PLATFORMS;
+  const platforms = availablePlatforms !== undefined ? availablePlatforms : ALL_PLATFORMS;
+
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -915,10 +916,9 @@ function TaskRow({ post, index, isClient, allClientNames,
           value={post.platforms ?? (post.platform ? [post.platform] : [])}
           disabled={isClient}
           onChange={(vals) => updatePost.mutate({ id: post.id, updates: { platforms: vals } })}
-          availablePlatforms={Array.from(new Set([
-            ...(clients.find(c => c.name === post.client_name)?.platforms ?? []),
-            ...allWorkspacePlatforms,
-          ]))}
+          availablePlatforms={post.client_name 
+            ? (clients.find(c => c.name === post.client_name)?.platforms ?? []) 
+            : allWorkspacePlatforms}
         />
       </td>
 

@@ -85,8 +85,8 @@ export function InvoicePreview({ invoice: q, onClose, embedded }: { invoice: Quo
         </div>
       )}
 
-      <div className={embedded ? "flex-1" : "overflow-y-auto flex-1"}>
-          <div id="q-print" className="p-6 text-sm text-gray-800">
+      <div className={embedded ? "flex-1" : "overflow-y-auto overflow-x-hidden flex-1"}>
+          <div id="q-print" className="p-4 sm:p-6 text-sm text-gray-800">
             <div className="flex items-start justify-between pb-4 border-b-2 border-gray-200">
               <div>
                 <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 inline-block mb-2 shadow-sm">
@@ -112,22 +112,23 @@ export function InvoicePreview({ invoice: q, onClose, embedded }: { invoice: Quo
               <p className="text-[11px] text-gray-500">Place of supply: {ef.place_of_supply || ""}</p>
             </div>
 
-            <div className="grid grid-cols-4 border border-gray-200 rounded-none overflow-hidden text-xs mb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 border border-gray-200 rounded-none overflow-hidden text-xs mb-3">
               {[
                 { label: "Issue Date", value: fmtDate(q.issue_date) },
                 { label: "Due Date", value: fmtDate(q.valid_until) },
                 { label: "Source", value: ef.source || "—" },
                 { label: "Reference", value: ef.reference_no || "—" },
               ].map((cell, i) => (
-                <div key={i} className={`px-3 py-2 ${i < 3 ? "border-r border-gray-200" : ""}`}>
+                <div key={i} className={`px-3 py-2 border-b sm:border-b-0 ${i % 2 === 0 ? "border-r border-gray-200" : ""} sm:border-r border-gray-200`}>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">{cell.label}</p>
                   <p className="font-semibold text-gray-800">{cell.value}</p>
                 </div>
               ))}
             </div>
 
-            <table className="w-full border border-gray-200 text-xs rounded-none">
-              <thead className="bg-gray-50">
+            <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full min-w-[500px] border border-gray-200 text-xs rounded-none">
+                <thead className="bg-gray-50">
                 <tr className="text-[10px] uppercase tracking-wider text-gray-500">
                   <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">Description</th>
                   <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">HSN/SAC</th>
@@ -153,8 +154,9 @@ export function InvoicePreview({ invoice: q, onClose, embedded }: { invoice: Quo
                 })}
               </tbody>
             </table>
+            </div>
 
-            <div className="flex gap-4 mt-3">
+            <div className="flex flex-col sm:flex-row gap-4 mt-3">
               <div className="flex-1 text-xs">
                 {(ef.payment_phone || ef.upi_id) && (
                   <div className="border border-gray-200 rounded-none p-3 bg-gray-50">
@@ -187,7 +189,7 @@ export function InvoicePreview({ invoice: q, onClose, embedded }: { invoice: Quo
                 )}
               </div>
 
-              <div className="w-52 text-xs">
+              <div className="w-full sm:w-52 text-xs">
                 <div className="border border-gray-200 rounded-none">
                   {[
                     { label: "Untaxed Amount", value: fmt(sub) },
@@ -212,7 +214,8 @@ export function InvoicePreview({ invoice: q, onClose, embedded }: { invoice: Quo
 
             <div className="mt-5">
               <h3 className="font-bold text-sm mb-2">HSN Summary</h3>
-              <table className="w-full border border-gray-200 text-xs">
+              <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full min-w-[400px] border border-gray-200 text-xs">
                 <thead className="bg-gray-50">
                   <tr className="text-[10px] uppercase tracking-wider text-gray-500">
                     <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">HSN/SAC</th>
@@ -234,6 +237,7 @@ export function InvoicePreview({ invoice: q, onClose, embedded }: { invoice: Quo
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
 
             <div className="mt-6 pt-3 border-t border-gray-200 flex justify-between items-center text-[11px] text-gray-500">

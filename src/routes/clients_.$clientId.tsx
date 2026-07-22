@@ -544,7 +544,7 @@ function ClientDetailPage() {
           </div>
           {client.platforms && client.platforms.length > 0 ? (
             <div className="flex flex-wrap gap-1">
-              {client.platforms.slice(0,2).map(p => (
+              {client.platforms.map(p => (
                 <span key={p} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: PLATFORM_COLOR[p as keyof typeof PLATFORM_COLOR] || "#666" }}>{p}</span>
               ))}
             </div>
