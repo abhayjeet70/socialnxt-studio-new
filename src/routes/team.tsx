@@ -6,12 +6,13 @@ import { Label } from "@/components/ui/label";
 import {
   Plus, Mail, Loader2, Users, UserCheck, ShieldCheck, Trash2, Pencil,
   TrendingUp, CheckCircle2, Clock, BarChart3, ChevronRight, X, FileText,
-  Eye, EyeOff
+  Eye, EyeOff, KeyRound
 } from "lucide-react";
 import {
   useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember,
   useUpdateProfile, WorkspaceMember, usePosts, useUpdateAgencyRole
 } from "@/lib/queries";
+import { supabase } from "@/lib/supabase";
 import { sendInvite, createAccount } from "@/server/invite";
 import React, { useState, useMemo } from "react";
 import { toast } from "sonner";
@@ -579,6 +580,7 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
   const joinedDate = new Date(member.created_at).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
   const { data: workspace } = useCurrentWorkspace();
   const isAdmin = workspace?.role === "admin";
+  const isOwnCard = workspace?.userId === member.user_id;
   const removeMember = useRemoveWorkspaceMember();
   const updateAgencyRole = useUpdateAgencyRole();
   const currentAgencyRole = member.agency_role || "Social Media Manager";
@@ -611,30 +613,68 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editName, setEditName] = useState(name ?? email.split("@")[0]);
+  const [editPhone, setEditPhone] = useState(user?.phone ?? "");
   const updateProfile = useUpdateProfile();
 
-  const handleSaveName = async (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editName.trim()) return;
     try {
-      await updateProfile.mutateAsync({ user_id: member.user_id, full_name: editName.trim() });
-      toast.success("Name updated!");
+      await updateProfile.mutateAsync({ 
+        user_id: member.user_id, 
+        full_name: editName.trim(),
+        phone: editPhone.trim() || undefined
+      });
+      toast.success("Profile updated!");
       setIsEditOpen(false);
     } catch (err: any) {
-      toast.error("Failed to update name: " + err.message);
+      toast.error("Failed to update profile: " + err.message);
+    }
+  };
+
+  // ── Change Password state (only for own card) ──
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    setIsSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast.success("Password updated successfully!");
+      setIsPasswordOpen(false);
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      toast.error("Failed to update password: " + (err.message || "Unknown error"));
+    } finally {
+      setIsSavingPassword(false);
     }
   };
 
   return (
     <div className="card-soft lift p-5">
-      {/* Edit Name Dialog */}
+      {/* Edit Profile Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Name</DialogTitle>
-            <DialogDescription>Update the display name for {email}.</DialogDescription>
+            <DialogTitle>Edit Profile</DialogTitle>
+            <DialogDescription>Update the profile details for {email}.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSaveName} className="space-y-4 pt-2">
+          <form onSubmit={handleSaveProfile} className="space-y-4 pt-2">
             <div className="space-y-2">
               <Label htmlFor={`edit-name-${member.user_id}`}>Full Name</Label>
               <Input
@@ -642,13 +682,92 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 placeholder="Enter full name"
+                required
                 autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`edit-phone-${member.user_id}`}>Phone Number</Label>
+              <Input
+                id={`edit-phone-${member.user_id}`}
+                type="tel"
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                placeholder="1234567890"
               />
             </div>
             <div className="flex gap-2">
               <Button type="button" variant="outline" className="flex-1" onClick={() => setIsEditOpen(false)}>Cancel</Button>
               <Button type="submit" className="flex-1" disabled={updateProfile.isPending}>
-                {updateProfile.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : "Save Name"}
+                {updateProfile.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : "Save Profile"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Password Dialog (own card only) */}
+      <Dialog open={isPasswordOpen} onOpenChange={(open) => {
+        setIsPasswordOpen(open);
+        if (!open) { setNewPassword(""); setConfirmPassword(""); }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>Set a new password for your account ({email}).</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleChangePassword} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor={`new-password-${member.user_id}`}>New Password</Label>
+              <div className="relative">
+                <Input
+                  id={`new-password-${member.user_id}`}
+                  type={showNewPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  placeholder="Min 6 characters"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`confirm-password-${member.user_id}`}>Confirm Password</Label>
+              <div className="relative">
+                <Input
+                  id={`confirm-password-${member.user_id}`}
+                  type={showConfirmPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  placeholder="Repeat new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {confirmPassword && newPassword !== confirmPassword && (
+                <p className="text-xs text-red-500">Passwords do not match.</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setIsPasswordOpen(false)}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={isSavingPassword}>
+                {isSavingPassword ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Updating...</> : "Update Password"}
               </Button>
             </div>
           </form>
@@ -680,18 +799,32 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
             )}
           </div>
         </button>
-        {isAdmin && (
-          <div className="flex items-center gap-1 shrink-0">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-blue-600 rounded-full" onClick={() => { setEditName(name ?? email.split("@")[0]); setIsEditOpen(true); }} title="Edit name">
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Change Password — only for own card */}
+          {isOwnCard && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-purple-600 rounded-full"
+              onClick={() => setIsPasswordOpen(true)}
+              title="Change password"
+            >
+              <KeyRound className="h-4 w-4" />
+            </Button>
+          )}
+          {/* Edit Profile — for admins and own card */}
+          {(isAdmin || isOwnCard) && (
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-blue-600 rounded-full" onClick={() => { setEditName(name ?? email.split("@")[0]); setEditPhone(user?.phone ?? ""); setIsEditOpen(true); }} title="Edit profile">
               <Pencil className="h-4 w-4" />
             </Button>
-            {member.role !== "admin" && (
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600 rounded-full" onClick={handleRemove} disabled={removeMember.isPending}>
-                {removeMember.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              </Button>
-            )}
-          </div>
-        )}
+          )}
+          {/* Remove Member — only for admins, not on themselves or other admins */}
+          {isAdmin && member.role !== "admin" && (
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600 rounded-full" onClick={handleRemove} disabled={removeMember.isPending} title="Remove member">
+              {removeMember.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            </Button>
+          )}
+        </div>
       </div>
       <div className="mt-4 text-xs flex items-center gap-2 text-muted-foreground">
         <Mail className="h-3.5 w-3.5 shrink-0" />

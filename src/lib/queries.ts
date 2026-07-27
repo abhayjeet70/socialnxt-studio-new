@@ -43,6 +43,7 @@ export type User = {
   email: string;
   full_name: string | null;
   avatar_url: string | null;
+  phone: string | null;
   created_at: string;
 };
 
@@ -389,6 +390,7 @@ export type WorkspaceMember = {
     email: string;
     full_name: string | null;
     avatar_url: string | null;
+    phone: string | null;
   } | null;
 };
 
@@ -400,7 +402,7 @@ export function useWorkspaceMembers(workspaceId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("workspace_members")
-        .select("id, role, agency_role, user_id, created_at, users(id, email, full_name, avatar_url)")
+        .select("id, role, agency_role, user_id, created_at, users(id, email, full_name, avatar_url, phone)")
         .eq("workspace_id", workspaceId!);
       if (error) throw error;
       return data as unknown as WorkspaceMember[];
@@ -446,19 +448,25 @@ export function useUpdateAgencyRole() {
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ user_id, full_name }: { user_id: string; full_name: string }) => {
+    mutationFn: async ({ user_id, full_name, phone }: { user_id: string; full_name?: string; phone?: string }) => {
+      const updates: Record<string, any> = {};
+      if (full_name !== undefined) updates.full_name = full_name;
+      if (phone !== undefined) updates.phone = phone;
+
       // Update public.users
       const { error: dbError } = await supabase
         .from("users")
-        .update({ full_name })
+        .update(updates)
         .eq("id", user_id);
       if (dbError) throw dbError;
 
-      // Update auth user metadata
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name }
-      });
-      if (authError) throw authError;
+      // Update auth user metadata for full_name only
+      if (full_name !== undefined) {
+        const { error: authError } = await supabase.auth.updateUser({
+          data: { full_name }
+        });
+        if (authError) throw authError;
+      }
 
       return true;
     },
