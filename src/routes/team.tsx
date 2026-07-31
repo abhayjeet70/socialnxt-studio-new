@@ -12,6 +12,7 @@ import {
   useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember,
   useUpdateProfile, WorkspaceMember, usePosts, useUpdateAgencyRole
 } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { sendInvite, createAccount } from "@/server/invite";
 import React, { useState, useMemo } from "react";
@@ -83,6 +84,8 @@ function TeamPage() {
   const [selectedMember, setSelectedMember] = useState<WorkspaceMember | null>(null);
 
   const isAdmin = workspace?.role === "admin";
+  const { hasPermission } = usePermissions();
+  const canManageEmployees = isAdmin || (workspace?.role === "employee" && hasPermission("manage_employees"));
 
   const admins = members.filter((m) => m.role === "admin");
   const employees = members.filter((m) => m.role === "employee");
@@ -148,7 +151,7 @@ function TeamPage() {
       title="Team"
       subtitle="Everyone in your workspace, their roles and active workload."
       actions={
-        isAdmin ? (
+        canManageEmployees ? (
           <Button className="rounded-xl h-10" onClick={() => setIsInviteOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> Add Member
           </Button>
@@ -247,7 +250,7 @@ function TeamPage() {
                 <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="font-semibold text-lg mb-2">No team members yet</h3>
                 <p className="text-muted-foreground text-sm mb-6">Invite employees and clients to collaborate.</p>
-                {isAdmin && <Button onClick={() => setIsInviteOpen(true)}><Plus className="h-4 w-4 mr-2" /> Invite First Member</Button>}
+                {canManageEmployees && <Button onClick={() => setIsInviteOpen(true)}><Plus className="h-4 w-4 mr-2" /> Invite First Member</Button>}
               </div>
             ) : (
               <div className="space-y-8">
@@ -580,6 +583,8 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
   const joinedDate = new Date(member.created_at).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
   const { data: workspace } = useCurrentWorkspace();
   const isAdmin = workspace?.role === "admin";
+  const { hasPermission } = usePermissions();
+  const canManageEmployees = isAdmin || (workspace?.role === "employee" && hasPermission("manage_employees"));
   const isOwnCard = workspace?.userId === member.user_id;
   const removeMember = useRemoveWorkspaceMember();
   const updateAgencyRole = useUpdateAgencyRole();
@@ -781,7 +786,7 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
           </div>
           <div className="min-w-0">
             <div className="font-semibold truncate hover:text-primary transition-colors">{name ?? email.split("@")[0]}</div>
-            {isAdmin && member.role === "employee" ? (
+            {canManageEmployees && member.role === "employee" ? (
               <Select value={currentAgencyRole} onValueChange={handleRoleChange}>
                 <SelectTrigger className="h-6 text-[10px] mt-1 bg-muted/50 border-0 px-2 py-0">
                   <SelectValue />
@@ -813,13 +818,13 @@ function MemberCard({ member, onViewProfile }: { member: WorkspaceMember; onView
             </Button>
           )}
           {/* Edit Profile — for admins and own card */}
-          {(isAdmin || isOwnCard) && (
+          {(canManageEmployees || isOwnCard) && (
             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-blue-600 rounded-full" onClick={() => { setEditName(name ?? email.split("@")[0]); setEditPhone(user?.phone ?? ""); setIsEditOpen(true); }} title="Edit profile">
               <Pencil className="h-4 w-4" />
             </Button>
           )}
           {/* Remove Member — only for admins, not on themselves or other admins */}
-          {isAdmin && member.role !== "admin" && (
+          {canManageEmployees && member.role !== "admin" && (
             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600 rounded-full" onClick={handleRemove} disabled={removeMember.isPending} title="Remove member">
               {removeMember.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
             </Button>

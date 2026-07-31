@@ -159,10 +159,11 @@ export function useCurrentWorkspace() {
 export function useUpdateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ workspace_id, name, custom_platforms }: { workspace_id: string; name?: string; custom_platforms?: any }) => {
+    mutationFn: async ({ workspace_id, name, custom_platforms, permissions }: { workspace_id: string; name?: string; custom_platforms?: any, permissions?: any }) => {
       const updates: any = {};
       if (name !== undefined) updates.name = name;
       if (custom_platforms !== undefined) updates.custom_platforms = custom_platforms;
+      if (permissions !== undefined) updates.permissions = permissions;
       const { error } = await supabase
         .from("workspaces")
         .update(updates)
@@ -792,6 +793,7 @@ export type Client = {
   close_reason?: string | null;
   team_assignments?: Record<string, string> | null;
   billing_date?: number | null;
+  display_id?: string | null;
 };
 
 export function useClients(workspaceId: string | undefined) {

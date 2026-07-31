@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical, Pencil, Download, Settings } from "lucide-react";
 import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useActiveClients, useUpdateDeal, Deal } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,7 +76,8 @@ function DealsPage() {
   };
 
   const isClient = workspace?.role === "client";
-  const canEdit = !isClient;
+  const { hasPermission } = usePermissions();
+  const canEdit = workspace?.role === "admin" || (workspace?.role === "employee" && hasPermission("access_deals"));
 
   const visibleDeals = isClient
     ? deals.filter((d) =>

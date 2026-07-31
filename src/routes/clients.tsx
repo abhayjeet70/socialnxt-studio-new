@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Plus, Search, Filter, MoreHorizontal, Loader2, Check, Users, Pencil, Trash2, Archive, Link, Instagram, Facebook, Linkedin, Youtube, Music, ChevronsUpDown, IndianRupee, FileText, CheckCircle2, AlertOctagon, Calendar } from "lucide-react";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import { useCurrentWorkspace, useClients, useCreateClient, useUpdateClient, useDeleteClient, useWorkspaceMembers, useDeals, type Client } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/clients")({
@@ -58,6 +59,7 @@ function ClientsPage() {
   const { data: clients = [], isLoading: isLoadingClients } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.workspaceId);
   const { data: deals = [] } = useDeals(workspace?.workspaceId);
+  const { hasPermission } = usePermissions();
   const createClient = useCreateClient();
   const updateClient = useUpdateClient();
   const deleteClient = useDeleteClient();
@@ -91,6 +93,7 @@ function ClientsPage() {
   const [editPlatforms, setEditPlatforms] = useState<string[]>([]);
   const [editTeamAssignments, setEditTeamAssignments] = useState<Record<string, string>>({});
   const [editBillingDate, setEditBillingDate] = useState<number | "">("");
+  const [editDisplayId, setEditDisplayId] = useState("");
   const [editManagerOpen, setEditManagerOpen] = useState<string | null>(null);
 
   // ── Delete state ──
@@ -156,6 +159,7 @@ function ClientsPage() {
     setEditPlatforms(c.platforms || []);
     setEditTeamAssignments(c.team_assignments || {});
     setEditBillingDate(c.billing_date || "");
+    setEditDisplayId(c.display_id || "");
   };
 
   const handleUpdateClient = (e: React.FormEvent) => {
@@ -176,6 +180,7 @@ function ClientsPage() {
         platforms: editPlatforms,
         team_assignments: editTeamAssignments,
         billing_date: editBillingDate || null,
+        display_id: editDisplayId || null,
       },
     }, {
       onSuccess: () => {
@@ -225,7 +230,7 @@ function ClientsPage() {
   const isEmployee = workspace?.role === "employee";
   const myUserId = workspace?.userId;
 
-  const accessibleClients = isEmployee
+  const accessibleClients = isEmployee && !hasPermission("view_clients")
     ? clients.filter(c => Object.values(c.team_assignments || {}).includes(myUserId!))
     : clients;
 
@@ -328,8 +333,9 @@ function ClientsPage() {
   const closedClients = accessibleClients.filter(c => c.status === "Closed" || c.status === "Inactive").length;
 
   // generate short client ID from UUID
-  function clientCode(id: string) {
-    return "CL-" + id.replace(/-/g, "").slice(0, 8).toUpperCase();
+  function clientCode(c: Client) {
+    if (c.display_id) return c.display_id;
+    return "CL-" + c.id.replace(/-/g, "").slice(0, 8).toUpperCase();
   }
 
   return (
@@ -343,27 +349,31 @@ function ClientsPage() {
               <Plus className="h-4 w-4 mr-2" /> New Client
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[450px]">
+          <DialogContent className="sm:max-w-[550px]">
             <DialogHeader>
               <DialogTitle>Add New Client</DialogTitle>
             </DialogHeader>
 
-            <form onSubmit={handleCreateClient} className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label>Client Name *</Label>
-                <Input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Acme Corp" />
+            <form onSubmit={handleCreateClient} className="space-y-4 pt-4 max-h-[80vh] overflow-y-auto px-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Client Name *</Label>
+                  <Input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Acme Corp" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Contact Email</Label>
+                  <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="hello@acme.com" />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Contact Email</Label>
-                <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="hello@acme.com" />
-              </div>
-              <div className="space-y-2">
-                <Label>Industry</Label>
-                <Input value={industry} onChange={e => setIndustry(e.target.value)} placeholder="e.g. Health & Wellness" />
-              </div>
-              <div className="space-y-2">
-                <Label>Billing Date (Day of month)</Label>
-                <Input type="number" min="1" max="31" value={billingDate} onChange={e => setBillingDate(Number(e.target.value) || "")} placeholder="e.g. 5 for 5th of every month" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Industry</Label>
+                  <Input value={industry} onChange={e => setIndustry(e.target.value)} placeholder="e.g. Health & Wellness" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Billing Date (Day of month)</Label>
+                  <Input type="number" min="1" max="31" value={billingDate} onChange={e => setBillingDate(Number(e.target.value) || "")} placeholder="e.g. 5" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Active Platforms</Label>
@@ -475,27 +485,37 @@ function ClientsPage() {
     >
       {/* ── Edit Client Dialog ── */}
       <Dialog open={!!editClient} onOpenChange={(open) => !open && setEditClient(null)}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle>Edit Client</DialogTitle>
             <DialogDescription>Update this client's platforms, status, and contact details.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpdateClient} className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label>Client Name *</Label>
-              <Input required value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Acme Corp" />
+          <form onSubmit={handleUpdateClient} className="space-y-4 pt-2 max-h-[80vh] overflow-y-auto px-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Client ID</Label>
+                <Input required value={editDisplayId} onChange={e => setEditDisplayId(e.target.value)} placeholder="e.g. CL1" />
+              </div>
+              <div className="space-y-2">
+                <Label>Client Name *</Label>
+                <Input required value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Acme Corp" />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Contact Email</Label>
-              <Input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="hello@acme.com" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Contact Email</Label>
+                <Input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="hello@acme.com" />
+              </div>
+              <div className="space-y-2">
+                <Label>Industry</Label>
+                <Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Industry</Label>
-              <Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Billing Date (Day of month)</Label>
-              <Input type="number" min="1" max="31" value={editBillingDate} onChange={e => setEditBillingDate(Number(e.target.value) || "")} placeholder="e.g. 5 for 5th of every month" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Billing Date (Day of month)</Label>
+                <Input type="number" min="1" max="31" value={editBillingDate} onChange={e => setEditBillingDate(Number(e.target.value) || "")} placeholder="e.g. 5 for 5th" />
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Active Platforms</Label>
@@ -760,7 +780,7 @@ function ClientsPage() {
 
                       {/* Client ID + name */}
                       <div>
-                        <p className="text-[11px] text-muted-foreground font-mono font-medium">{clientCode(c.id)}</p>
+                        <p className="text-[11px] text-muted-foreground font-mono font-medium">{clientCode(c)}</p>
                         <p className="text-[17px] font-bold text-foreground group-hover:text-primary transition-colors leading-tight mt-0.5 truncate">{c.name}</p>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">{c.industry || c.email || "—"}</p>
                       </div>

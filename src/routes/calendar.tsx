@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Loader2, X, ExternalLink, Calendar, Instagram, Facebook, Linkedin, Youtube } from "lucide-react";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import { useCurrentWorkspace, usePosts, useUpdatePostStatus, Post, useClients, useWorkspaceMembers, useCreatePost } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
@@ -72,8 +73,10 @@ function CalendarPage() {
   const updatePostStatus = useUpdatePostStatus();
   const createPost = useCreatePost();
   const isLoading = isLoadingPosts || isLoadingClients || isLoadingMembers;
+  const { hasPermission } = usePermissions();
 
   const isClient = workspace?.role === "client";
+  const canEdit = workspace?.role === "admin" || (workspace?.role === "employee" && hasPermission("edit_calendar"));
   const isEmployee = workspace?.role === "employee";
   const clientNameForFilter = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
   const myUserId = workspace?.userId;
@@ -278,7 +281,7 @@ function CalendarPage() {
                 </Button>
               </div>
 
-              {!isClient && (
+              {canEdit && (
                 <div className="sm:ml-auto flex items-center gap-2 overflow-x-auto pb-0.5">
                   {/* Platform filter dropdown */}
                   <div className="w-44">
@@ -542,7 +545,7 @@ function CalendarPage() {
                                 {p}
                               </span>
                             ))}
-                            {post.client_name && !isClient && (
+                            {post.client_name && canEdit && (
                               <span className="bg-muted px-1.5 py-0.5 rounded-full truncate max-w-[120px]">
                                 Client: {post.client_name}
                               </span>
@@ -633,7 +636,7 @@ function CalendarPage() {
                               ) : null}
 
                               {/* Status actions (agency only) */}
-                              {!isClient && post.status !== "published" && (
+                              {canEdit && post.status !== "published" && (
                                 <div className="flex flex-wrap gap-1.5 pt-1">
                                   {post.status !== "scheduled" && (
                                     <button
@@ -671,7 +674,7 @@ function CalendarPage() {
               </div>
 
               {/* Add to day button */}
-              {!isClient && (
+              {canEdit && (
                 <div className="p-3 border-t border-border">
                   <button
                     onClick={() => setIsAddPostOpen(true)}
@@ -687,7 +690,7 @@ function CalendarPage() {
       </div>
 
       {/* Desktop Add Post Modal */}
-      {isAddPostOpen && selectedDay && !isClient && (
+      {isAddPostOpen && selectedDay && canEdit && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsAddPostOpen(false)} />
            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4">
@@ -803,7 +806,7 @@ function CalendarPage() {
                               {p}
                             </span>
                           ))}
-                          {post.client_name && !isClient && (
+                          {post.client_name && canEdit && (
                             <span className="bg-muted px-1.5 py-0.5 rounded-full truncate max-w-[160px]">
                               Client: {post.client_name}
                             </span>
@@ -824,7 +827,7 @@ function CalendarPage() {
                                 </p>
                               </div>
                             )}
-                            {!isClient && post.status !== "published" && (
+                            {canEdit && post.status !== "published" && (
                               <div className="flex gap-1.5 pt-1">
                                 {post.status !== "scheduled" && (
                                   <button

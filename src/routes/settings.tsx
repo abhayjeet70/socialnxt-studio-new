@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Loader2, Save, ShieldCheck, Search, MoreHorizontal, UserX } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
+import { DEFAULT_PERMISSIONS, PermMatrix, usePermissions } from "@/lib/permissions";
 import {
   Accordion,
   AccordionItem,
@@ -35,37 +36,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 const BG_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#3b82f6", "#14b8a6", "#f97316", "#8b5cf6"];
 
-const DEFAULT_PERMISSIONS = [
-  { label: "View all clients", key: "view_clients", roles: { admin: true, employee: true, client: false } },
-  { label: "Edit content calendar", key: "edit_calendar", roles: { admin: true, employee: true, client: false } },
-  { label: "Access Proposals", key: "access_proposals", roles: { admin: true, employee: false, client: false } },
-  { label: "Approve proposals", key: "approve_proposals", roles: { admin: true, employee: false, client: false } },
-  { label: "Access Quotations", key: "access_quotations", roles: { admin: true, employee: false, client: false } },
-  { label: "Access Deals", key: "access_deals", roles: { admin: true, employee: false, client: false } },
-  { label: "Manage employees", key: "manage_employees", roles: { admin: true, employee: false, client: false } },
-  { label: "Export reports", key: "export_reports", roles: { admin: true, employee: false, client: false } },
-  { label: "View reports", key: "view_reports", roles: { admin: true, employee: true, client: false } },
-  { label: "Delete content rows", key: "delete_content", roles: { admin: true, employee: true, client: false } },
-  { label: "Mark posts as Posted", key: "mark_posted", roles: { admin: true, employee: true, client: false } },
-];
-
-type PermMatrix = Record<string, Record<string, boolean>>;
-
-function loadPermissions(workspaceId: string): PermMatrix {
-  try {
-    const stored = localStorage.getItem(`perms_${workspaceId}`);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  const matrix: PermMatrix = {};
-  for (const p of DEFAULT_PERMISSIONS) {
-    matrix[p.key] = { ...p.roles };
-  }
-  return matrix;
-}
-
-function savePermissions(workspaceId: string, matrix: PermMatrix) {
-  localStorage.setItem(`perms_${workspaceId}`, JSON.stringify(matrix));
-}
+// Removed local permissions functions
 
 function SettingsPage() {
   const { data: workspace } = useCurrentWorkspace();
@@ -108,9 +79,18 @@ function SettingsPage() {
 
   useEffect(() => {
     if (workspace?.workspaceId) {
-      setPermMatrix(loadPermissions(workspace.workspaceId));
+      const dbPerms = workspace.permissions as PermMatrix | undefined;
+      if (dbPerms) {
+        setPermMatrix(dbPerms);
+      } else {
+        const matrix: PermMatrix = {};
+        for (const p of DEFAULT_PERMISSIONS) {
+          matrix[p.key] = { ...p.roles };
+        }
+        setPermMatrix(matrix);
+      }
     }
-  }, [workspace?.workspaceId]);
+  }, [workspace]);
 
   const byRole = {
     admin: members.filter((m) => m.role === "admin"),
@@ -173,12 +153,17 @@ function SettingsPage() {
   const handleSavePermissions = () => {
     if (!workspace) return;
     setPermsSaving(true);
-    setTimeout(() => {
-      savePermissions(workspace.workspaceId, permMatrix);
-      setPermsDirty(false);
-      setPermsSaving(false);
-      toast.success("Permissions saved successfully!");
-    }, 400);
+    updateWorkspace.mutate(
+      { workspace_id: workspace.workspaceId, permissions: permMatrix },
+      {
+        onSuccess: () => {
+          setPermsDirty(false);
+          toast.success("Permissions saved to database successfully!");
+        },
+        onError: (err) => toast.error("Failed to save permissions: " + err.message),
+        onSettled: () => setPermsSaving(false),
+      }
+    );
   };
 
   const handleResetPermissions = () => {

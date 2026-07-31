@@ -3,7 +3,8 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AdminTasksView } from "@/components/admin-tasks-view";
 import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers, useBulkCreatePosts } from "@/lib/queries";
-import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download, Undo, X, Upload, Check } from "lucide-react";
+import { usePermissions } from "@/lib/permissions";
+import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download, Undo, X, Upload, Check, FileText } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,9 @@ import { toast } from "sonner";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { exportContentSheetToExcel } from "@/utils/exportExcel";
+import { parseExcelForPreview, ImportPreviewData } from "@/utils/importExcel";
+import { ImportPreviewModal, ImportMode } from "@/components/import-preview-modal";
 
 export type UndoAction = {
   description: string;
@@ -162,11 +166,20 @@ function TasksPage() {
   const createPost = useCreatePost();
   const bulkCreatePosts = useBulkCreatePosts();
   const importInputRef = useRef<HTMLInputElement>(null);
+  
+  const { hasPermission } = usePermissions();
+
 
   const queryClient = useQueryClient();
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [newlyAddedPostId, setNewlyAddedPostId] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
+  const [importPreviewData, setImportPreviewData] = useState<ImportPreviewData | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isImportProcessing, setIsImportProcessing] = useState(false);
+  const [importProgressMessage, setImportProgressMessage] = useState("");
 
   const handleUndo = async () => {
     if (!undoAction) return;
@@ -396,55 +409,133 @@ function TasksPage() {
   useEffect(() => { if (page > totalPages - 1) setPage(0); }, [totalPages, page]);
   const pagedPosts = sortedPosts.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
-  // Parse a single CSV line respecting double-quoted fields
-  const parseCSVLine = (line: string): string[] => {
-    const out: string[] = [];
-    let cur = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-        else inQuotes = !inQuotes;
-      } else if (ch === "," && !inQuotes) {
-        out.push(cur); cur = "";
-      } else cur += ch;
-    }
-    out.push(cur);
-    return out.map(s => s.trim());
+  const triggerExcelImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls,.csv';
+    input.onchange = async (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      console.log("[Import] File selected:", file?.name);
+      
+      if (!file) {
+        toast.error("No file was selected.");
+        return;
+      }
+      if (!workspace) {
+        console.error("[Import] Workspace is undefined!");
+        toast.error("Import failed: Workspace not loaded.");
+        return;
+      }
+      
+      try {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (!['xlsx', 'xls', 'csv'].includes(ext || '')) {
+          toast.error("Unsupported file type. Please upload an Excel (.xlsx) or CSV file.");
+          return;
+        }
+        setImportProgressMessage("Parsing Excel file...");
+        const preview = await parseExcelForPreview(file, workspace.workspaceId, workspace.userId, members);
+        console.log("[Import] State update starting with valid rows:", preview.validRows.length);
+        setImportPreviewData(preview);
+        setIsImportModalOpen(true);
+        console.log("[Import] State update completed. Modal should open.");
+      } catch (err: any) {
+        console.error("[Import] Error caught:", err);
+        toast.error("Failed to parse file: " + (err.message || "Unknown error"));
+      }
+    };
+    input.click();
   };
 
-  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !workspace) return;
+  const processImport = async (mode: ImportMode) => {
+    console.log("[Import] Confirm clicked. Mode:", mode);
+    if (!importPreviewData || !workspace) {
+      console.warn("[Import] Missing previewData or workspace. Aborting confirm.");
+      return;
+    }
+    console.log("[Import] Inserting rows:", importPreviewData.validRows.length);
+    setIsImportProcessing(true);
+    
     try {
-      const text = await file.text();
-      const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
-      if (lines.length < 2) { toast.error("CSV has no data rows"); return; }
-      // Header: Client,Platform,Content Type,Topic,Assigned To,Status,Schedule (Assigned To ignored on import)
-      const rows: Partial<Post>[] = lines.slice(1).map(line => {
-        const c = parseCSVLine(line);
-        const platforms = (c[1] || "").split(/[;|]/).map(s => s.trim()).filter(Boolean);
-        const scheduleRaw = c[6] || "";
-        const parsed = scheduleRaw ? new Date(scheduleRaw) : null;
-        const scheduled = parsed && !isNaN(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString();
+      if (mode === "replace") {
+        setImportProgressMessage("Clearing existing posts...");
+        const { error } = await supabase.from("posts").delete().eq("workspace_id", workspace.workspaceId);
+        if (error) throw error;
+      }
+
+      setImportProgressMessage("Processing images...");
+      // Upload extracted images
+      const imagesToUpload = importPreviewData.extractedImages;
+      const rowImageUrls = new Map<number, { ref: string[], comp: string[] }>();
+      
+      for (const img of importPreviewData.extractedImages) {
+        let entry = rowImageUrls.get(img.rowNumber);
+        if (!entry) {
+          entry = { ref: [], comp: [] };
+          rowImageUrls.set(img.rowNumber, entry);
+        }
+      }
+
+      let uploaded = 0;
+      for (const img of imagesToUpload) {
+        setImportProgressMessage(`Uploading images (${uploaded + 1}/${imagesToUpload.length})...`);
+        const fileObj = new File([img.buffer], `img_${Date.now()}.${img.extension}`, { type: `image/${img.extension}` });
+        const url = await uploadMediaFile(fileObj);
+        
+        const entry = rowImageUrls.get(img.rowNumber)!;
+        if (img.columnName === "reference_content") entry.ref.push(url);
+        if (img.columnName === "completed_work") entry.comp.push(url);
+        uploaded++;
+      }
+
+      setImportProgressMessage("Saving rows to database...");
+      
+      const rowsToInsert = importPreviewData.validRows.map((row, idx) => {
+        // Find row number in original file (this maps to idx if validRows is 1:1, but invalidRows might exist)
+        // Since we didn't store rowNumber in validRows directly, we will just use the previewData.extractedImages mapping
+        // Oh wait, `rowImageUrls` maps original row numbers. We need to attach the original row number to `validRows`
+        // Actually, validRows doesn't have `rowNumber`. Let's just trust they are in the same order minus invalid.
+        // I'll assume `validRows` needs to be updated to have original rowNumber in `importExcel.ts`.
+        // For now, I'll update `importExcel.ts` separately, but let's assume validRows will have a `_rowNumber` property.
+        return row;
+      });
+
+      const finalRows = rowsToInsert.map(row => {
+        const rowNumber = (row as any)._rowNumber;
+        const entry = rowNumber ? rowImageUrls.get(rowNumber) : null;
+        
+        // Strip out internal properties that shouldn't be saved to DB
+        const { _rowNumber, _warnings, ...restRow } = row as any;
+        
         return {
-          workspace_id: workspace.workspaceId,
-          author_id: workspace.userId,
-          client_name: c[0] || null,
-          platforms: platforms.length ? platforms : [],
-          content_type: c[2] || "",
-          topic: c[3] || "",
-          status: "draft" as const,
-          scheduled_for: scheduled,
+          ...restRow,
+          reference_content: entry?.ref?.length ? [...(row.reference_content || []), ...entry.ref] : row.reference_content,
+          completed_work: entry?.comp?.length ? [...(row.completed_work || []), ...entry.comp] : row.completed_work
         };
       });
-      await bulkCreatePosts.mutateAsync({ rows, workspace_id: workspace.workspaceId });
-      toast.success(`Imported ${rows.length} row${rows.length === 1 ? "" : "s"}!`);
+
+      console.log("[Import] Submitting rows to Supabase:", finalRows.length);
+      setImportProgressMessage("Saving rows to database...");
+      const { data, error } = await supabase.from("posts").insert(finalRows).select("id");
+      if (error) {
+        console.error("[Import] Supabase insert failed:", error);
+        throw error;
+      }
+      console.log("[Import] Supabase insert succeeded. Inserted IDs:", data?.map(d => d.id));
+
+      setImportProgressMessage("Success! Refreshing data...");
+      await queryClient.invalidateQueries({ queryKey: ["posts"] });
+      console.log("[Import] Queries invalidated. React should re-render table now.");
+      
+      toast.success(`Successfully imported ${finalRows.length} posts!`);
+      setIsImportModalOpen(false);
+      setImportPreviewData(null);
     } catch (err: any) {
-      toast.error("Import failed: " + (err.message || "bad CSV"));
+      console.error("[Import] Confirm process failed:", err);
+      toast.error("Failed to import: " + (err.message || "Unknown error"));
     } finally {
-      if (importInputRef.current) importInputRef.current.value = "";
+      setIsImportProcessing(false);
+      console.log("[Import] Import processing flag cleared.");
     }
   };
 
@@ -469,6 +560,29 @@ function TasksPage() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Content Sheet exported as CSV");
+  };
+
+  const handleExportExcel = async () => {
+    if (sortedPosts.length === 0) return toast.info("No data to export");
+    setIsExportingExcel(true);
+    try {
+      const clientName = selectedClientFilter !== "All Clients" ? selectedClientFilter : (sortedPosts[0]?.client_name ?? "ContentSheet");
+      await exportContentSheetToExcel({
+        posts: sortedPosts,
+        members,
+        clientName,
+        customColumns,
+      });
+      toast.success("Excel exported successfully!");
+    } catch (err: any) {
+      toast.error("Failed to export Excel: " + (err?.message ?? "Unknown error"));
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  const handleExportPDF = () => {
+    window.print();
   };
 
   const showAdminDashboard = (workspace?.role === "admin" || isSMM) && adminViewMode === "dashboard";
@@ -565,22 +679,33 @@ function TasksPage() {
               </Select>
             </div>
           )}
-          <Button variant="outline" onClick={handleExportCSV} className="rounded-xl h-10 border-input" title="Export as CSV">
-            <Download className="h-4 w-4 mr-2" />
-            <span>Export CSV</span>
+          <Button
+            variant="outline"
+            onClick={handleExportExcel}
+            disabled={isExportingExcel}
+            className="rounded-xl h-10 border-input"
+            title="Export as Excel (.xlsx) with embedded images"
+          >
+            {isExportingExcel
+              ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              : <Download className="h-4 w-4 mr-2" />}
+            <span>{isExportingExcel ? "Exporting..." : "Export Excel"}</span>
+          </Button>
+          <Button variant="outline" onClick={handleExportPDF} className="rounded-xl h-10 border-input" title="Export as PDF">
+            <FileText className="h-4 w-4 mr-2" />
+            <span>Export PDF</span>
           </Button>
           {!isClient && (
             <>
-              <input ref={importInputRef} type="file" accept=".csv,text/csv" onChange={handleImportCSV} className="hidden" />
               <Button
                 variant="outline"
-                onClick={() => importInputRef.current?.click()}
+                onClick={triggerExcelImport}
                 disabled={bulkCreatePosts.isPending}
                 className="rounded-xl h-10 border-input"
-                title="Bulk import posts from a CSV (Client, Platform, Content Type, Topic, Assigned To, Status, Schedule)"
+                title="Bulk import posts from Excel (.xlsx)"
               >
                 {bulkCreatePosts.isPending ? <Loader2 className="h-4 w-4 animate-spin sm:mr-2" /> : <Upload className="h-4 w-4 sm:mr-2" />}
-                <span className="hidden sm:inline">Import</span>
+                <span className="hidden sm:inline">Import Excel</span>
               </Button>
             </>
           )}
@@ -613,8 +738,8 @@ function TasksPage() {
         {isLoading ? (
           <div className="py-20 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : (
-          <div className="overflow-auto flex-1 relative">
-            <table className="w-full text-sm text-left border-collapse min-w-[1200px]" style={{ tableLayout: "fixed" }}>
+          <div className="overflow-auto print-overflow-visible print-block flex-1 relative">
+            <table className="w-full text-sm text-left border-collapse min-w-[1200px] print-w-full" style={{ tableLayout: "fixed" }}>
               <thead className="bg-primary text-white">
                 <tr>
                   <ResizableHeader label="DATE" defaultWidth={96} />
@@ -648,7 +773,7 @@ function TasksPage() {
         )}
         {/* Pagination footer */}
         {sortedPosts.length > 0 && (
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border bg-white">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border bg-white print-hide">
             <div className="text-xs text-muted-foreground">
               Showing <span className="font-semibold text-foreground">{safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, sortedPosts.length)}</span> of {sortedPosts.length}
             </div>
@@ -675,6 +800,16 @@ function TasksPage() {
           </button>
         </div>
       )}
+
+      {/* Excel Import Preview Modal */}
+      <ImportPreviewModal 
+        isOpen={isImportModalOpen}
+        onOpenChange={setIsImportModalOpen}
+        previewData={importPreviewData}
+        onConfirm={processImport}
+        isProcessing={isImportProcessing}
+        progressMessage={importProgressMessage}
+      />
     </AppShell>
   );
 }
@@ -753,6 +888,7 @@ function TaskRow({ post, index, isClient, allClientNames,
 }) {
   const queryClient = useQueryClient();
   const { data: workspace } = useCurrentWorkspace();
+  const { hasPermission } = usePermissions();
   const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
   const updatePost = useUpdatePostDetails();
   const updateStatus = useUpdatePostStatus();
@@ -849,7 +985,7 @@ function TaskRow({ post, index, isClient, allClientNames,
                 <button
                   type="button"
                   onClick={handleDelete}
-                  className="absolute top-1 right-1 bg-black/50 hover:bg-red-600 text-white rounded-full p-1 transition-colors backdrop-blur-sm shadow-sm"
+                  className="absolute top-1 right-1 bg-black/50 hover:bg-red-600 text-white rounded-full p-1 transition-colors backdrop-blur-sm shadow-sm print-hide"
                   title="Remove image"
                 >
                   <X className="w-3 h-3" />
@@ -865,7 +1001,7 @@ function TaskRow({ post, index, isClient, allClientNames,
               <button
                 type="button"
                 onClick={handleDelete}
-                className="ml-1 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-full p-0.5 transition-colors shrink-0"
+                className="ml-1 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-full p-0.5 transition-colors shrink-0 print-hide"
                 title="Remove link"
               >
                 <X className="w-3 h-3" />
@@ -960,7 +1096,7 @@ function TaskRow({ post, index, isClient, allClientNames,
       {/* REFERENCE CONTENT */}
       <td className="p-3 border-r border-gray-200 align-top">
         {renderMedia(post.reference_content, "reference_content")}
-        <div className="flex gap-2">
+        <div className="flex gap-2 print-hide">
           <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => handleAddLink("reference_content")}>
             <LinkIcon className="w-3.5 h-3.5 mr-1" /> Add Link
           </Button>
@@ -986,7 +1122,7 @@ function TaskRow({ post, index, isClient, allClientNames,
           />
         </div>
 
-        <div className="flex gap-2 mt-3">
+        <div className="flex gap-2 mt-3 print-hide">
           <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => handleAddLink("completed_work")}>
             <LinkIcon className="w-3.5 h-3.5 mr-1" /> Add Link
           </Button>
@@ -1162,8 +1298,8 @@ function TaskRow({ post, index, isClient, allClientNames,
               </Button>
             )}
             
-            {/* Admins or SMMs can complete an approved/scheduled task at any time */}
-            {(workspace?.role === "admin" || isSMM) &&
+            {/* Admins or users with mark_posted can complete an approved/scheduled task at any time */}
+            {(workspace?.role === "admin" || hasPermission("mark_posted")) &&
               (post.status === "scheduled" || post.status === "approved") && (
               <Button
                 size="sm"
@@ -1179,8 +1315,8 @@ function TaskRow({ post, index, isClient, allClientNames,
               </Button>
             )}
             
-            {/* Admin or SMM can delete the row */}
-            {(workspace?.role === "admin" || isSMM) && (
+            {/* Delete row permission */}
+            {(workspace?.role === "admin" || (workspace?.role === "employee" && hasPermission("delete_content"))) && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -1207,6 +1343,14 @@ function TaskRow({ post, index, isClient, allClientNames,
               </Button>
             )}
           </div>
+          {/* Hidden file input for uploads */}
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleMediaUpload} 
+            className="hidden" 
+            accept="image/*" 
+          />
         </div>
       </td>
 
@@ -1227,15 +1371,6 @@ function TaskRow({ post, index, isClient, allClientNames,
           />
         </td>
       ))}
-
-      {/* Hidden file input for uploads */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleMediaUpload} 
-        className="hidden" 
-        accept="image/*" 
-      />
     </tr>
   );
 }

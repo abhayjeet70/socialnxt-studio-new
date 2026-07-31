@@ -185,3 +185,51 @@
   }
 }
 
+@media print {
+  @page {
+    size: landscape;
+    margin: 0.5cm;
+  }
+  
+  .print-hide {
+    display: none !important;
+  }
+  
+  .print-overflow-visible {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  
+  .print-block {
+    display: block !important;
+    zoom: 0.65 !important; /* Scale down the entire block so it fits nicely on one page */
+  }
+  
+  .print-w-full {
+    width: 100% !important;
+    /* We no longer force min-width 100% because we want the table to keep its fixed layout proportions */
+  }
+
+  /* Make inputs/textareas print friendly (no scrollbars, no borders) */
+  input, textarea, select {
+    border: none !important;
+    background: transparent !important;
+    resize: none !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    -webkit-appearance: none;
+    padding: 0 !important;
+  }
+  
+  /* Avoid breaking inside table rows */
+  tr {
+    page-break-inside: avoid;
+  }
+
+  /* Keep background colors */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

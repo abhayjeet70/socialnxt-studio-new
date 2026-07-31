@@ -126,6 +126,7 @@ function ClientDetailPage() {
   const [editStatus, setEditStatus] = useState("Planning");
   const [editTeam, setEditTeam] = useState<Record<string, string>>({});
   const [editBillingDate, setEditBillingDate] = useState<number | "">("");
+  const [editDisplayId, setEditDisplayId] = useState("");
 
   const [dealOpen, setDealOpen] = useState(false);
   const [dealTarget, setDealTarget] = useState<any>(null);
@@ -275,6 +276,7 @@ function ClientDetailPage() {
     setEditStatus(client.status);
     setEditTeam(client.team_assignments || {});
     setEditBillingDate(client.billing_date || "");
+    setEditDisplayId(client.display_id || "");
   };
 
   const handleUpdateClient = async (e: React.FormEvent) => {
@@ -292,6 +294,7 @@ function ClientDetailPage() {
         status: editStatus,
         team_assignments: editTeam,
         billing_date: editBillingDate || null,
+        display_id: editDisplayId || null,
       },
     }, {
       onSuccess: () => {
@@ -356,7 +359,7 @@ function ClientDetailPage() {
   };
 
   // helpers
-  const clientCode = "CL-" + client.id.replace(/-/g, "").slice(0, 8).toUpperCase();
+  const clientCode = client.display_id || ("CL-" + client.id.replace(/-/g, "").slice(0, 8).toUpperCase());
   const isInactive = client.status === "Closed" || client.status === "Inactive";
   const manager = (() => {
     const id = client.team_assignments?.["Account/Social Media Manager"];
@@ -822,9 +825,16 @@ function ClientDetailPage() {
           <form onSubmit={handleUpdateClient} className="space-y-4 pt-4 max-h-[80vh] overflow-y-auto px-1">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
+                <Label>Client ID</Label>
+                <Input value={editDisplayId} onChange={e => setEditDisplayId(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
                 <Label>Client Name</Label>
                 <Input value={editName} onChange={e => setEditName(e.target.value)} required />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select value={editStatus} onValueChange={setEditStatus}>

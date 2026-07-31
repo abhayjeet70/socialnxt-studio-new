@@ -22,6 +22,7 @@ import {
   useUpdateQuotationStatus, useDeleteQuotation, useClients,
   useWorkspaceMembers, Quotation, LineItem,
 } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 
 export const Route = createFileRoute("/quotations")({
   head: () => ({ meta: [{ title: "Quotations — SocialNxt CRM" }] }),
@@ -102,8 +103,9 @@ function QuotationsPage() {
 
   const isAdmin = workspace?.role === "admin";
   const isClient = workspace?.role === "client";
+  const { hasPermission } = usePermissions();
   const clientName = workspace?.userFullName || workspace?.userEmail?.split("@")[0] || "";
-  const canEdit = workspace?.role === "admin" || workspace?.role === "employee";
+  const canEdit = workspace?.role === "admin" || (workspace?.role === "employee" && hasPermission("access_quotations"));
 
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterClient, setFilterClient] = useState<string>("all");

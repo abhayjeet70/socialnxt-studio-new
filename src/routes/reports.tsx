@@ -17,6 +17,7 @@ import { PLATFORM_COLOR } from "@/lib/demo-data";
 import {
   useCurrentWorkspace, usePosts, useClients, useWorkspaceMembers,
 } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 
 export const Route = createFileRoute("/reports")({
   head: () => ({ meta: [{ title: "Reports — SocialNxt CRM" }] }),
@@ -35,6 +36,11 @@ function ReportsPage() {
   const { data: clients = [], isLoading: clientsLoading } = useClients(workspace?.workspaceId);
   const { data: members = [], isLoading: membersLoading } = useWorkspaceMembers(workspace?.workspaceId);
   const isLoading = postsLoading || clientsLoading || membersLoading;
+  const { hasPermission, role } = usePermissions();
+
+  if (role === "client" || (role === "employee" && !hasPermission("view_reports"))) {
+    return <AppShell title="Reports" subtitle="Performance analytics"><div className="p-8 text-center text-muted-foreground font-medium">You do not have permission to view reports.</div></AppShell>;
+  }
 
   // ─── Compute effective date window ────────────────────────────────────────────
   const now = new Date();
@@ -229,22 +235,24 @@ function ReportsPage() {
             </div>
           )}
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button className="rounded-xl h-10">
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline ml-2">Export Report</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer">
-                <FileText className="h-4 w-4 mr-2" /> Export as PDF
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
-                <FileSpreadsheet className="h-4 w-4 mr-2" /> Export as CSV
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {(role === "admin" || hasPermission("export_reports")) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="rounded-xl h-10">
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline ml-2">Export Report</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer">
+                  <FileText className="h-4 w-4 mr-2" /> Export as PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+                  <FileSpreadsheet className="h-4 w-4 mr-2" /> Export as CSV
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       }
     >

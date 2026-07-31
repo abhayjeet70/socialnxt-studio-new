@@ -297,7 +297,7 @@ export function AppShell({ children, title, subtitle, actions }: {
     <div className="h-screen w-full bg-[oklch(0.985_0.005_255)] flex overflow-hidden">
 
       {/* ── Desktop Sidebar ────────────────────────────────────────────────── */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col">
+      <aside className="hidden lg:flex w-64 shrink-0 flex-col print-hide">
         <SidebarContent workspace={workspace} pathname={pathname} />
       </aside>
 
@@ -312,7 +312,7 @@ export function AppShell({ children, title, subtitle, actions }: {
       {/* ── Mobile drawer panel ───────────────────────────────────────────── */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-72 lg:hidden transition-transform duration-300 ease-in-out",
+          "fixed inset-y-0 left-0 z-50 w-72 lg:hidden transition-transform duration-300 ease-in-out print-hide",
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -328,7 +328,7 @@ export function AppShell({ children, title, subtitle, actions }: {
 
       {/* ── Mobile search overlay ─────────────────────────────────────────── */}
       {mobileSearchOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 lg:hidden" onClick={() => { setMobileSearchOpen(false); setGlobalSearch(""); }}>
+        <div className="fixed inset-0 z-50 bg-black/40 lg:hidden print-hide" onClick={() => { setMobileSearchOpen(false); setGlobalSearch(""); }}>
           <div className="bg-white px-4 pt-4 pb-6 shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-1">
               <div className="relative flex-1">
@@ -364,7 +364,7 @@ export function AppShell({ children, title, subtitle, actions }: {
       {/* ── Main column ───────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 flex flex-col overflow-y-auto">
         {/* Topbar */}
-        <header className="sticky top-0 z-20 bg-white/85 backdrop-blur border-b border-border">
+        <header className="sticky top-0 z-20 bg-white/85 backdrop-blur border-b border-border print-hide">
           <div className="h-16 px-4 sm:px-6 lg:px-8 flex items-center gap-3">
 
             {/* Hamburger — mobile only */}
@@ -483,15 +483,15 @@ export function AppShell({ children, title, subtitle, actions }: {
             <div className="flex-1 min-w-[280px]">
               <h1 className="text-2xl sm:text-[28px] font-bold tracking-tight text-foreground">{title}</h1>
               {/* Subtitle hidden on mobile to prevent layout overflow */}
-              {subtitle && <p className="hidden sm:block mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+              {subtitle && <p className="hidden sm:block mt-1 text-sm text-muted-foreground print-hide">{subtitle}</p>}
             </div>
-            {actions && <div className="shrink-0 max-w-full overflow-x-auto pb-1">{actions}</div>}
+            {actions && <div className="shrink-0 max-w-full overflow-x-auto pb-1 print-hide">{actions}</div>}
           </div>
           {children}
         </main>
 
         {/* ── Bottom Tab Bar — mobile only ──────────────────────────────────── */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-border safe-area-bottom">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-border safe-area-bottom print-hide">
           <div className="flex items-stretch h-16">
             {BOTTOM_TABS.map((tab) => {
               const active = tab.exact ? pathname === tab.to : pathname === tab.to || pathname.startsWith(tab.to + "/");

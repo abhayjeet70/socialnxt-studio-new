@@ -12,6 +12,7 @@ import {
   useUpdateProposalStatus, useDeleteProposal, useClients, Proposal,
   uploadProposalPDF, useWorkspaceMembers
 } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -47,7 +48,9 @@ function ProposalsPage() {
 
   const isClient = workspace?.role === "client";
   const isAdmin = workspace?.role === "admin";
-  const canEdit = workspace?.role === "admin" || workspace?.role === "employee";
+  const { hasPermission } = usePermissions();
+  const canEdit = workspace?.role === "admin" || (workspace?.role === "employee" && hasPermission("access_proposals"));
+  const canApprove = workspace?.role === "admin" || hasPermission("approve_proposals") || (isClient && hasPermission("approve_proposals"));
 
   // Combine clients from clients table with actual workspace members who are clients
   const closedClientNames = new Set(clients.filter(c => c.status === "Closed").map(c => c.name.toLowerCase()));
@@ -422,8 +425,8 @@ ${p.notes || "No additional notes."}
                           </DropdownMenuContent>
                         </DropdownMenu>
 
-                        {/* Client-only Approve button */}
-                        {isClient && p.status === "Sent" && (
+                        {/* Approve button */}
+                        {canApprove && p.status === "Sent" && (
                           <button
                             title="Approve Proposal"
                             onClick={() => handleStatusChange(p, "Approved")}
@@ -434,8 +437,8 @@ ${p.notes || "No additional notes."}
                           </button>
                         )}
 
-                        {/* Client-only Reject button */}
-                        {isClient && p.status === "Sent" && (
+                        {/* Reject button */}
+                        {canApprove && p.status === "Sent" && (
                           <button
                             title="Reject Proposal"
                             onClick={() => handleStatusChange(p, "Rejected")}
@@ -446,8 +449,8 @@ ${p.notes || "No additional notes."}
                           </button>
                         )}
 
-                        {/* Admin delete & edit */}
-                        {isAdmin && (
+                        {/* Delete & edit */}
+                        {canEdit && (
                           <>
                             <button
                               title="Edit"
