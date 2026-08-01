@@ -400,10 +400,10 @@ function QuotationsPage() {
 
   return (
     <AppShell
-      title="Quotations"
-      subtitle="Create, assign and track detailed service quotations for your clients."
+      title={open ? (editingQuotation ? "Edit Quotation" : "New Quotation") : "Quotations"}
+      subtitle={open ? "Fill in the details to generate a professional quotation" : "Create, assign and track detailed service quotations for your clients."}
       actions={
-        canEdit ? (
+        canEdit && !open ? (
           <Button className="rounded-xl h-10" onClick={() => {
             setEditingQuotation(null);
             const next = getNextQuotationNumber();
@@ -416,6 +416,7 @@ function QuotationsPage() {
       }
     >
       {/* ── Table ────────────────────────────────────────────────────────── */}
+      {!open && (
       <div className="card-soft p-4 sm:p-5">
         {quotationsAll.length > 0 && (
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
@@ -550,12 +551,13 @@ function QuotationsPage() {
           </div>
         )}
       </div>
+      )}
 
-            {/* ── New Quotation Full-Page Overlay (TC07) ──────────────────────── */}
+      {/* ── New Quotation Form ──────────────────────── */}
       {open && (
-        <div className="fixed inset-0 z-50 bg-[#FAF9F6] flex flex-col overflow-hidden">
-          {/* Sticky Header */}
-          <div className="px-6 py-4 border-b shrink-0 bg-white flex items-center justify-between shadow-sm">
+        <div className="bg-[#FAF9F6] rounded-xl shadow-sm border border-gray-200 flex flex-col mb-8">
+          {/* Header */}
+          <div className="px-6 py-4 border-b bg-white flex items-center justify-between rounded-t-xl">
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-xl bg-indigo-50 grid place-items-center">
                 <FileText className="h-5 w-5 text-indigo-600" />
@@ -574,10 +576,7 @@ function QuotationsPage() {
               <X className="h-5 w-5 text-muted-foreground" />
             </button>
           </div>
-          {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto">
-
-          <div className="p-6 space-y-6 flex-1 text-sm">
+          <div className="p-4 sm:p-6 space-y-6 text-sm">
             {/* Top Info */}
             <div className="space-y-4">
               <div className="space-y-1">
@@ -785,19 +784,12 @@ function QuotationsPage() {
               </div>
             </div>
 
-            {/* LIVE PREVIEW EMBED */}
+            {/* LIVE PREVIEW BUTTON */}
             <div className="pt-6">
-              <div className="text-center bg-gray-200/60 text-gray-500 text-[10px] font-bold py-2.5 uppercase tracking-widest rounded-t-xl border border-b-0 border-gray-300">
-                Live Preview — Exact PDF Layout
-              </div>
-              <div className="border border-gray-300 rounded-b-xl bg-gray-100 p-2 sm:p-4 overflow-hidden flex justify-center">
-                <div className="w-full max-w-[400px] h-[500px] bg-white rounded-lg shadow-sm border border-gray-200 overflow-y-auto">
-                  {/* We render QuotationPreview inside, but we must pass a prop or use CSS to scale it if needed. For now, it will just scroll. */}
-                  <div className="origin-top scale-[0.8] w-[125%] h-[125%]">
-                     <QuotationPreview quotation={livePreviewMock} onClose={() => {}} embedded />
-                  </div>
-                </div>
-              </div>
+              <Button type="button" variant="outline" className="w-full bg-white border-dashed border-gray-300 text-gray-600 hover:bg-gray-50 h-12" onClick={() => setPreview(livePreviewMock)}>
+                <Eye className="h-4 w-4 mr-2" />
+                Preview PDF Layout
+              </Button>
             </div>
 
             {/* TOTALS CARD */}
@@ -849,7 +841,6 @@ function QuotationsPage() {
               </div>
             </div>
 
-          </div>
           </div>
         </div>
       )}

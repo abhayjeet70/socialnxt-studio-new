@@ -84,7 +84,7 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       <Link to="/" onClick={onNavClick} className="px-6 py-6 flex flex-col items-center gap-3 hover:opacity-90 transition-opacity text-center">
         <div className="bg-white rounded-xl shadow-sm overflow-hidden flex items-center justify-center w-[200px] h-[56px]">
-          <img src={logo} alt="Logo" className="w-full h-full object-contain scale-[3] -translate-y-[2px]" />
+          <img src={logo} alt="Logo" className="h-full w-full object-contain scale-[2.2]" />
         </div>
         <div className="leading-tight min-w-0 mt-1 w-full">
           <div className="text-lg font-bold tracking-tight text-white truncate w-full" title={workspace?.workspaceName || "My Workspace"}>

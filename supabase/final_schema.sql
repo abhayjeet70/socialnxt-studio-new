@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS public.deals (
   advance_paid NUMERIC DEFAULT 0,
   payment_date DATE,
   payment_method TEXT,
-  payment_note TEXT
+  payment_note TEXT,
+  payment_history JSONB DEFAULT '[]'::jsonb
 );
 
 CREATE TABLE IF NOT EXISTS public.invoices (

@@ -76,6 +76,7 @@ export type Deal = {
   completed_at: string | null;
   created_at: string;
   updated_at?: string;
+  payment_history?: { date: string; amount: number; method: string; note: string }[] | null;
   users?: Partial<User>;
 };
 

@@ -367,14 +367,11 @@ function ClientDetailPage() {
       setDealTarget(deal);
       setDealProject(deal.project_name || "");
       setDealAmount(deal.amount || 0);
-      setDealAdvance(deal.advance_paid || 0);
-      setDealDate(deal.payment_date || new Date().toISOString().split("T")[0]);
-      setDealMethod(deal.payment_method || "UPI");
-      
-      const rawNote = deal.payment_note || "";
-      const match = rawNote.match(/\[GST:(\d+)\]/);
-      setDealGst(match ? Number(match[1]) : 18);
-      setDealNote(rawNote.replace(/\[GST:\d+\]/, '').trim());
+      setDealAdvance(0);
+      setDealDate(new Date().toISOString().split("T")[0]);
+      setDealMethod("UPI");
+      setDealNote("");
+      setDealGst(18);
     } else {
       setDealTarget(null);
       setDealProject("");
@@ -393,11 +390,30 @@ function ClientDetailPage() {
     if (!ws) return;
 
     const finalNote = (dealNote.trim() + ` [GST:${dealGst}]`).trim();
+    const historyEntry = dealAdvance > 0 ? {
+      date: dealDate,
+      amount: dealAdvance,
+      method: dealMethod,
+      note: finalNote,
+    } : null;
 
     if (dealTarget) {
+      const newHistory = historyEntry 
+        ? [...(dealTarget.payment_history || []), historyEntry]
+        : (dealTarget.payment_history || []);
+      const totalAdvance = (dealTarget.advance_paid || 0) + dealAdvance;
+
       updateDeal.mutate({
         id: dealTarget.id,
-        updates: { project_name: dealProject, amount: dealAmount, advance_paid: dealAdvance, payment_date: dealDate, payment_method: dealMethod, payment_note: finalNote }
+        updates: { 
+          project_name: dealProject, 
+          amount: dealAmount, 
+          advance_paid: totalAdvance, 
+          payment_date: dealDate, 
+          payment_method: dealMethod, 
+          payment_note: finalNote,
+          payment_history: newHistory
+        }
       }, {
         onSuccess: () => { toast.success("Record updated"); setDealOpen(false); },
         onError: (err: any) => toast.error(err.message),
@@ -412,6 +428,7 @@ function ClientDetailPage() {
         payment_date: dealDate,
         payment_method: dealMethod,
         payment_note: finalNote,
+        payment_history: historyEntry ? [historyEntry] : [],
         days: "30",
         stage: "Active",
         created_by: workspace?.userId || "",
@@ -1021,11 +1038,11 @@ function ClientDetailPage() {
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[11px] font-bold text-primary uppercase tracking-widest mb-1">Paid</span>
-                <span className="text-xl font-extrabold text-primary">₹{dealAdvance.toLocaleString('en-IN')}</span>
+                <span className="text-xl font-extrabold text-primary">₹{((dealTarget?.advance_paid || 0) + dealAdvance).toLocaleString('en-IN')}</span>
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[11px] font-bold text-orange-500 uppercase tracking-widest mb-1">Balance</span>
-                <span className="text-xl font-extrabold text-orange-500">₹{Math.max(0, (dealAmount * (1 + dealGst / 100)) - dealAdvance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                <span className="text-xl font-extrabold text-orange-500">₹{Math.max(0, (dealAmount * (1 + dealGst / 100)) - ((dealTarget?.advance_paid || 0) + dealAdvance)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
               </div>
             </div>
 
@@ -1069,7 +1086,7 @@ function ClientDetailPage() {
                     <Input type="number" className="h-10 border-primary/20 focus-visible:ring-primary" value={dealAmount || ""} onChange={e => setDealAmount(Number(e.target.value) || 0)} required />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Advance Paid</Label>
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">{dealTarget ? "Add Payment Amount" : "Advance Paid"}</Label>
                     <Input type="number" className="h-10 border-primary/20 focus-visible:ring-primary" value={dealAdvance || ""} onChange={e => setDealAdvance(Number(e.target.value) || 0)} />
                   </div>
                       <div className="space-y-1.5">
@@ -1098,7 +1115,7 @@ function ClientDetailPage() {
                 </div>
 
                 <div className="flex gap-3 justify-end pt-2">
-                  <Button type="button" variant="outline" className="h-10 px-4 rounded-lg border-border text-foreground hover:bg-muted font-medium" onClick={() => setDealAdvance(Math.round(dealAmount * (1 + dealGst / 100)))}>Full balance</Button>
+                  <Button type="button" variant="outline" className="h-10 px-4 rounded-lg border-border text-foreground hover:bg-muted font-medium" onClick={() => setDealAdvance(Math.max(0, Math.round(dealAmount * (1 + dealGst / 100)) - (dealTarget?.advance_paid || 0)))}>Full balance</Button>
                   <Button type="submit" className="h-10 px-5 rounded-lg bg-[#0F4C3A] hover:bg-[#0F4C3A]/90 text-white font-medium" disabled={createDeal.isPending || updateDeal.isPending}>
                     {createDeal.isPending || updateDeal.isPending ? <Loader2 className="animate-spin w-4 h-4 mr-2" /> : null}
                     {dealTarget ? "Update record" : "Add record"}
@@ -1110,9 +1127,23 @@ function ClientDetailPage() {
             {/* History Section */}
             <div className="space-y-3">
               <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest px-1">History</span>
-              <div className="border border-dashed border-border rounded-xl p-8 text-center bg-white shadow-sm">
-                <span className="text-sm text-muted-foreground">No payments recorded yet.</span>
-              </div>
+              {dealTarget?.payment_history && dealTarget.payment_history.length > 0 ? (
+                <div className="space-y-2">
+                  {dealTarget.payment_history.map((h: any, i: number) => (
+                    <div key={i} className="flex justify-between items-center bg-white p-3 rounded-lg border border-border shadow-sm">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold">{new Date(h.date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        <span className="text-xs text-muted-foreground">{h.method} {h.note ? `• ${h.note}` : ''}</span>
+                      </div>
+                      <span className="text-sm font-bold text-primary">₹{h.amount.toLocaleString("en-IN")}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="border border-dashed border-border rounded-xl p-8 text-center bg-white shadow-sm">
+                  <span className="text-sm text-muted-foreground">No payments recorded yet.</span>
+                </div>
+              )}
             </div>
             
             <div className="flex justify-end pt-2">
