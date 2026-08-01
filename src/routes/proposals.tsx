@@ -236,26 +236,31 @@ function ProposalsPage() {
     toast.success("Bulk download completed (CSV)");
   };
 
-  const handleDownloadWord = (p: Proposal) => {
-    // Generate a simple mock Word document content
-    const content = `
-Proposal: ${p.title}
-Client: ${p.client_name}
-Amount: ₹${p.amount.toLocaleString("en-IN")}
-Status: ${p.status}
-Created: ${new Date(p.created_at).toLocaleDateString()}
-
-Notes:
-${p.notes || "No additional notes."}
+  const handleDownloadExcel = (p: Proposal) => {
+    // Generate an Excel-compatible HTML table with proper MIME type
+    const htmlContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="utf-8" /><style>td,th{border:1px solid #ccc;padding:6px 12px;font-family:Arial,sans-serif;font-size:12px;}th{background:#f0f0f0;font-weight:bold;}</style></head>
+      <body>
+        <table>
+          <tr><th colspan="2" style="font-size:14px;text-align:center;">Proposal Details</th></tr>
+          <tr><th>Title</th><td>${p.title}</td></tr>
+          <tr><th>Client</th><td>${p.client_name}</td></tr>
+          <tr><th>Amount (₹)</th><td>${p.amount.toLocaleString("en-IN")}</td></tr>
+          <tr><th>Status</th><td>${p.status}</td></tr>
+          <tr><th>Created</th><td>${new Date(p.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td></tr>
+          <tr><th>Notes</th><td>${p.notes || "No additional notes."}</td></tr>
+        </table>
+      </body></html>
     `;
-    const blob = new Blob([content], { type: 'application/msword' });
+    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${p.title.replace(/\s+/g, '-').toLowerCase()}-proposal.doc`;
+    a.download = `${p.title.replace(/\s+/g, '-').toLowerCase()}-proposal.xls`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("Downloaded as Word Document");
+    toast.success("Downloaded as Excel spreadsheet");
   };
 
   return (
@@ -419,8 +424,8 @@ ${p.notes || "No additional notes."}
                                 <FileText className="h-4 w-4 mr-2" /> No PDF available
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem onClick={() => handleDownloadWord(p)} className="cursor-pointer">
-                              <FileText className="h-4 w-4 mr-2" /> Download as Word
+                            <DropdownMenuItem onClick={() => handleDownloadExcel(p)} className="cursor-pointer">
+                              <FileText className="h-4 w-4 mr-2" /> Download as Excel
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

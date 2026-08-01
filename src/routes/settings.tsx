@@ -19,8 +19,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember, useUpdateWorkspace, useDeleteWorkspace,
+  useCurrentWorkspace, useWorkspaceMembers, useRemoveWorkspaceMember, useUpdateWorkspace, useDeleteWorkspace, uploadMediaFile
 } from "@/lib/queries";
+import { webnxtBase } from "@/lib/invoiceUtils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings")({
@@ -47,6 +48,26 @@ function SettingsPage() {
 
   const [companyName, setCompanyName] = useState(workspace?.workspaceName || "");
   const [supportEmail, setSupportEmail] = useState("");
+  
+  const [invoiceSettings, setInvoiceSettings] = useState<any>(() => {
+    if (workspace?.workspaceId) {
+      const local = localStorage.getItem(`invoiceSettings_${workspace.workspaceId}`);
+      if (local) return JSON.parse(local);
+    }
+    if (workspace?.invoiceSettings && Object.keys(workspace.invoiceSettings).length > 0) {
+      return workspace.invoiceSettings;
+    }
+    return { ...webnxtBase };
+  });
+  
+  useEffect(() => {
+    // Only sync from workspace if local storage doesn't have it
+    if (workspace?.invoiceSettings && Object.keys(workspace.invoiceSettings).length > 0) {
+      const local = localStorage.getItem(`invoiceSettings_${workspace.workspaceId}`);
+      if (!local) setInvoiceSettings(workspace.invoiceSettings);
+    }
+  }, [workspace]);
+
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const deleteWorkspace = useDeleteWorkspace();
@@ -139,6 +160,20 @@ function SettingsPage() {
     );
   };
 
+  const handleSaveInvoiceSettings = () => {
+    if (!workspace) return;
+    setIsSaving(true);
+    localStorage.setItem(`invoiceSettings_${workspace.workspaceId}`, JSON.stringify(invoiceSettings));
+    updateWorkspace.mutate(
+      { workspace_id: workspace.workspaceId, invoice_settings: invoiceSettings },
+      {
+        onSuccess: () => toast.success("Invoice settings saved successfully!"),
+        onError: (err) => toast.error("Failed to save invoice settings: " + err.message),
+        onSettled: () => setIsSaving(false),
+      }
+    );
+  };
+
   const handleToggle = (permKey: string, role: string, value: boolean) => {
     setPermMatrix((prev) => ({
       ...prev,
@@ -184,6 +219,7 @@ function SettingsPage() {
             { value: "roles-permissions", label: "Roles & Permissions" },
             { value: "social", label: "Social Accounts" },
             { value: "platforms", label: "Platforms" },
+            { value: "invoice", label: "Invoice Info" },
             { value: "company", label: "Company Settings" },
           ].map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm text-sm px-4">
@@ -546,6 +582,282 @@ function SettingsPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </TabsContent>
+
+        {/* ─── Invoice Info Tab ─────────────────────────────────────────────────── */}
+        <TabsContent value="invoice" className="mt-5">
+          <div className="flex flex-col lg:flex-row gap-6">
+            
+            {/* Left Column: Company Identity */}
+            <div className="flex-1 space-y-4">
+              <div className="mb-6">
+                <h3 className="text-lg font-bold">Company identity</h3>
+                <p className="text-sm text-muted-foreground">Logo, legal identity, address and invoice footer.</p>
+              </div>
+              
+              <div className="bg-[#fcfaf7] border border-border p-6 rounded-2xl space-y-4 shadow-sm">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="h-16 w-32 border border-border bg-white rounded-lg flex items-center justify-center overflow-hidden">
+                    {invoiceSettings.companyLogo ? (
+                      <img src={invoiceSettings.companyLogo} alt="Logo" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground font-semibold">Webnxt</span>
+                    )}
+                  </div>
+                  <div>
+                    <input 
+                      type="file" 
+                      id="logo-upload" 
+                      className="hidden" 
+                      accept="image/png,image/jpeg,image/webp" 
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 750 * 1024) return toast.error("File is too large (max 750KB).");
+                        
+                        const loadingToast = toast.loading("Uploading logo...");
+                        try {
+                          const url = await uploadMediaFile(file);
+                          const newSettings = { ...invoiceSettings, companyLogo: url };
+                          setInvoiceSettings(newSettings);
+                          if (workspace?.workspaceId) {
+                            localStorage.setItem(`invoiceSettings_${workspace.workspaceId}`, JSON.stringify(newSettings));
+                          }
+                          toast.success("Logo uploaded!", { id: loadingToast });
+                        } catch (err: any) {
+                          toast.error("Failed to upload: " + err.message, { id: loadingToast });
+                        }
+                      }}
+                    />
+                    <Button variant="outline" className="h-9 text-xs" onClick={() => document.getElementById("logo-upload")?.click()}>
+                      Upload logo
+                    </Button>
+                    <p className="text-[10px] text-muted-foreground mt-1">PNG, JPG or WebP under 750 KB.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Company Name *</Label>
+                  <Input 
+                    value={invoiceSettings.companyName || ''} 
+                    onChange={e => setInvoiceSettings({...invoiceSettings, companyName: e.target.value})} 
+                    className="h-9 bg-white" 
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Tagline</Label>
+                  <Input 
+                    value={invoiceSettings.companyTagline || ''} 
+                    onChange={e => setInvoiceSettings({...invoiceSettings, companyTagline: e.target.value})} 
+                    className="h-9 bg-white" 
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Address Line 1</Label>
+                    <Input 
+                      value={invoiceSettings.companyAddressLine1 || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, companyAddressLine1: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Address Line 2</Label>
+                    <Input 
+                      value={invoiceSettings.companyAddressLine2 || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, companyAddressLine2: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Address Line 3</Label>
+                  <Input 
+                    value={invoiceSettings.companyAddressLine3 || ''} 
+                    onChange={e => setInvoiceSettings({...invoiceSettings, companyAddressLine3: e.target.value})} 
+                    className="h-9 bg-white" 
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">GSTIN *</Label>
+                  <Input 
+                    value={invoiceSettings.companyGstin || ''} 
+                    onChange={e => setInvoiceSettings({...invoiceSettings, companyGstin: e.target.value})} 
+                    className="h-9 bg-white" 
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Footer Email</Label>
+                    <Input 
+                      value={invoiceSettings.footerEmail || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, footerEmail: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Footer Website</Label>
+                    <Input 
+                      value={invoiceSettings.footerWebsite || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, footerWebsite: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Payment Information */}
+            <div className="flex-1 space-y-4">
+              <div className="mb-6">
+                <h3 className="text-lg font-bold">Payment information</h3>
+                <p className="text-sm text-muted-foreground">Choose what new invoices show by default; each invoice can switch modes before creation.</p>
+              </div>
+
+              <div className="bg-[#fcfaf7] border border-border p-6 rounded-2xl space-y-4 shadow-sm">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Default Payment Mode</Label>
+                  <Select 
+                    value={invoiceSettings.defaultPaymentMode || 'upi'} 
+                    onValueChange={v => setInvoiceSettings({...invoiceSettings, defaultPaymentMode: v})}
+                  >
+                    <SelectTrigger className="h-9 bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="upi">UPI / QR</SelectItem>
+                      <SelectItem value="bank">Bank Transfer</SelectItem>
+                      <SelectItem value="both">Show both (QR & Bank)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* UPI Details Box */}
+                <div className="border border-purple-100 bg-purple-50/50 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center gap-2 text-purple-600 font-bold text-xs uppercase mb-2">
+                    <span>UPI Details</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="h-20 w-20 border border-border bg-white rounded-lg flex items-center justify-center overflow-hidden p-1">
+                      {invoiceSettings.paymentQrCustomImage ? (
+                        <img src={invoiceSettings.paymentQrCustomImage} alt="QR" className="h-full w-full object-contain" />
+                      ) : (
+                        <div className="text-[10px] text-center text-muted-foreground p-2">No QR<br/>Uploaded</div>
+                      )}
+                    </div>
+                    <div>
+                      <input 
+                        type="file" 
+                        id="qr-upload" 
+                        className="hidden" 
+                        accept="image/png,image/jpeg,image/webp" 
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 750 * 1024) return toast.error("File is too large (max 750KB).");
+                          
+                          const loadingToast = toast.loading("Uploading QR Code...");
+                          try {
+                            const url = await uploadMediaFile(file);
+                            const newSettings = { ...invoiceSettings, paymentQrCustomImage: url };
+                            setInvoiceSettings(newSettings);
+                            if (workspace?.workspaceId) {
+                              localStorage.setItem(`invoiceSettings_${workspace.workspaceId}`, JSON.stringify(newSettings));
+                            }
+                            toast.success("QR Code uploaded!", { id: loadingToast });
+                          } catch (err: any) {
+                            toast.error("Failed to upload: " + err.message, { id: loadingToast });
+                          }
+                        }}
+                      />
+                      <Button variant="outline" className="h-8 text-xs bg-white" onClick={() => document.getElementById("qr-upload")?.click()}>
+                        Upload QR
+                      </Button>
+                      <p className="text-[10px] text-muted-foreground mt-1">Saved once for future invoices.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">UPI ID</Label>
+                    <Input 
+                      value={invoiceSettings.upiId || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, upiId: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Payment Account / Phone</Label>
+                    <Input 
+                      value={invoiceSettings.paymentAccount || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, paymentAccount: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+                </div>
+
+                {/* Bank Details Box */}
+                <div className="border border-emerald-100 bg-emerald-50/50 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase mb-2">
+                    <span>Bank Details</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground -mt-3 mb-2">Saved for future invoices. Select "Bank transfer" or "Show both" above to display them on the invoice.</p>
+                  
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Bank Name</Label>
+                    <Input 
+                      value={invoiceSettings.bankName || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, bankName: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Account Name</Label>
+                    <Input 
+                      value={invoiceSettings.bankAccountName || ''} 
+                      onChange={e => setInvoiceSettings({...invoiceSettings, bankAccountName: e.target.value})} 
+                      className="h-9 bg-white" 
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold text-muted-foreground uppercase">Account Number</Label>
+                      <Input 
+                        value={invoiceSettings.bankAccountNumber || ''} 
+                        onChange={e => setInvoiceSettings({...invoiceSettings, bankAccountNumber: e.target.value})} 
+                        className="h-9 bg-white" 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold text-muted-foreground uppercase">IFSC Code</Label>
+                      <Input 
+                        value={invoiceSettings.bankIfscCode || ''} 
+                        onChange={e => setInvoiceSettings({...invoiceSettings, bankIfscCode: e.target.value})} 
+                        className="h-9 bg-white" 
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-6 flex justify-end pt-4 border-t border-border">
+            {isAdmin && (
+              <Button onClick={handleSaveInvoiceSettings} disabled={isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Invoice Settings
+              </Button>
+            )}
           </div>
         </TabsContent>
 

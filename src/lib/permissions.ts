@@ -6,7 +6,7 @@ export const DEFAULT_PERMISSIONS = [
   { label: "Access Proposals", key: "access_proposals", roles: { admin: true, employee: false, client: false } },
   { label: "Approve proposals", key: "approve_proposals", roles: { admin: true, employee: false, client: false } },
   { label: "Access Quotations", key: "access_quotations", roles: { admin: true, employee: false, client: false } },
-  { label: "Access Deals", key: "access_deals", roles: { admin: true, employee: false, client: false } },
+  { label: "Access Project Tracker", key: "access_deals", roles: { admin: true, employee: false, client: false } },
   { label: "Manage employees", key: "manage_employees", roles: { admin: true, employee: false, client: false } },
   { label: "Export reports", key: "export_reports", roles: { admin: true, employee: false, client: false } },
   { label: "View reports", key: "view_reports", roles: { admin: true, employee: true, client: false } },
@@ -30,11 +30,14 @@ export function usePermissions() {
 
   const hasPermission = (permKey: string): boolean => {
     if (!role) return false;
-    if (role === 'admin') return true;
 
+    // TC06: Respect explicitly saved permMatrix even for admins
     if (wsPerms && wsPerms[permKey] && wsPerms[permKey][role] !== undefined) {
       return wsPerms[permKey][role];
     }
+
+    // Default: admins have all permissions, others use DEFAULT_PERMISSIONS
+    if (role === 'admin') return true;
 
     const defaultPerm = DEFAULT_PERMISSIONS.find((p) => p.key === permKey);
     if (defaultPerm) {

@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
 import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useWorkspaceMembers, useIssues, useQuotations } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -39,7 +40,7 @@ const NAV: { to: string; label: string; icon: typeof LayoutDashboard; exact?: bo
   { to: "/media", label: "Media Library", icon: Images },
   { to: "/team", label: "Team", icon: Users2 },
   { to: "/meetings", label: "Meetings", icon: Video },
-  { to: "/deals", label: "Deals", icon: KanbanSquare },
+  { to: "/deals", label: "Project Tracker", icon: KanbanSquare },
   { to: "/proposals", label: "Proposals", icon: FileText },
   { to: "/quotations", label: "Quotations", icon: Receipt },
   { to: "/issues", label: "Client Issues", icon: AlertOctagon },
@@ -61,27 +62,14 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
   pathname: string;
   onNavClick?: () => void;
 }) {
-  const [perms, setPerms] = useState<any>({});
-  
-  useEffect(() => {
-    if (workspace?.workspaceId) {
-      try {
-        const stored = localStorage.getItem(`perms_${workspace.workspaceId}`);
-        if (stored) setPerms(JSON.parse(stored));
-      } catch {}
-    }
-  }, [workspace?.workspaceId]);
-
-  const hasPerm = (key: string, role: string, defaultVal: boolean) => {
-    return perms[key]?.[role] ?? defaultVal;
-  };
+  const { hasPermission } = usePermissions();
 
   const visibleNav = NAV.filter(item => {
     const role = workspace?.role || "employee";
     
-    if (item.to === "/proposals") return hasPerm("access_proposals", role, role === "admin");
-    if (item.to === "/quotations") return hasPerm("access_quotations", role, role === "admin");
-    if (item.to === "/deals") return hasPerm("access_deals", role, role === "admin");
+    if (item.to === "/proposals") return hasPermission("access_proposals");
+    if (item.to === "/quotations") return hasPermission("access_quotations");
+    if (item.to === "/deals") return hasPermission("access_deals");
 
     if (role === "client") {
       return ["/", "/calendar", "/tasks", "/media", "/meetings", "/issues", "/activity-logs", "/proposals", "/quotations"].includes(item.to);

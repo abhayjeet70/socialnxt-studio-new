@@ -8,9 +8,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
-} from "@/components/ui/sheet";
-import {
   Plus, Loader2, FileText, Trash2, Eye, Printer, X,
   Receipt, BellRing, Send, Edit3
 } from "lucide-react";
@@ -151,6 +148,8 @@ function QuotationsPage() {
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
 
   const defaultForm = () => ({
+    // Quotation number
+    quotation_number: "",
     // Client
     client_name: "",
     client_gstin: "",
@@ -205,13 +204,24 @@ function QuotationsPage() {
   const handleSave = async () => {
     if (!form.client_name) return toast.error("Please select a client.");
     if (form.line_items.length === 0) return toast.error("Add at least one line item.");
+    if (!form.quotation_number.trim()) return toast.error("Please enter a quotation number.");
     if (!workspace?.userId) return;
+
+    // TC08: Duplicate quotation number validation
+    const trimmedNum = form.quotation_number.trim();
+    const isDuplicate = quotationsAll.some(
+      (q) => q.quotation_number === trimmedNum && q.id !== editingQuotation?.id
+    );
+    if (isDuplicate) {
+      return toast.error(`Quotation number "${trimmedNum}" already exists. Please use a unique number.`);
+    }
 
     if (editingQuotation) {
       updateQuotation.mutate(
         {
           id: editingQuotation.id,
           workspace_id: workspace.workspaceId,
+          quotation_number: trimmedNum,
           client_name: form.client_name,
           assigned_to: form.assigned_to,
           notify_admin: form.notify_admin,
@@ -253,7 +263,7 @@ function QuotationsPage() {
           workspace_id: workspace.workspaceId,
           created_by: workspace.userId,
           client_name: form.client_name,
-          quotation_number: `Q-${Math.floor(Math.random() * 100000)}`,
+          quotation_number: trimmedNum,
           assigned_to: form.assigned_to,
           notify_admin: form.notify_admin,
           service_type: form.service_type,
@@ -293,6 +303,7 @@ function QuotationsPage() {
   const handleEdit = (q: Quotation) => {
     setEditingQuotation(q);
     setForm({
+      quotation_number: q.quotation_number,
       client_name: q.client_name,
       client_gstin: q.extra_fields?.client_gstin || "",
       place_of_supply: q.extra_fields?.place_of_supply || "",
@@ -346,7 +357,7 @@ function QuotationsPage() {
       id: editingQuotation?.id || "mock-id",
       workspace_id: workspace?.workspaceId || "",
       created_by: editingQuotation?.created_by || workspace?.userId || "",
-      quotation_number: editingQuotation?.quotation_number || "Q-NEW",
+      quotation_number: form.quotation_number || editingQuotation?.quotation_number || "Q-NEW",
       client_name: form.client_name,
       assigned_to: form.assigned_to,
       notify_admin: form.notify_admin,
@@ -376,6 +387,17 @@ function QuotationsPage() {
     };
   }, [editingQuotation, workspace, form]);
 
+  // TC08: Generate next available quotation number for new forms
+  const getNextQuotationNumber = () => {
+    const nums = quotationsAll
+      .map(q => q.quotation_number)
+      .filter(n => n.startsWith("Q-"))
+      .map(n => parseInt(n.replace("Q-", ""), 10))
+      .filter(n => !isNaN(n));
+    const max = nums.length > 0 ? Math.max(...nums) : 0;
+    return `Q-${String(max + 1).padStart(5, "0")}`;
+  };
+
   return (
     <AppShell
       title="Quotations"
@@ -384,7 +406,8 @@ function QuotationsPage() {
         canEdit ? (
           <Button className="rounded-xl h-10" onClick={() => {
             setEditingQuotation(null);
-            setForm(defaultForm());
+            const next = getNextQuotationNumber();
+            setForm({ ...defaultForm(), quotation_number: next });
             setOpen(true);
           }}>
             <Plus className="h-4 w-4 mr-1" /> New Quotation
@@ -528,23 +551,43 @@ function QuotationsPage() {
         )}
       </div>
 
-            {/* ── New Quotation Dialog ──────────────────────────────────────────── */}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-md md:max-w-lg overflow-y-auto p-0 flex flex-col bg-[#FAF9F6]">
-          <SheetHeader className="px-6 py-5 border-b shrink-0 bg-white sticky top-0 z-10">
-            <SheetTitle className="flex items-center gap-2 text-indigo-700">
-              <Eye className="h-4 w-4" /> 
-              {editingQuotation ? "Edit Quotation" : "New Quotation"}
-            </SheetTitle>
-            <SheetDescription className="sr-only">Fill in the details to generate a professional quotation.</SheetDescription>
-          </SheetHeader>
+            {/* ── New Quotation Full-Page Overlay (TC07) ──────────────────────── */}
+      {open && (
+        <div className="fixed inset-0 z-50 bg-[#FAF9F6] flex flex-col overflow-hidden">
+          {/* Sticky Header */}
+          <div className="px-6 py-4 border-b shrink-0 bg-white flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-indigo-50 grid place-items-center">
+                <FileText className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <h2 className="font-bold text-lg text-indigo-700 leading-none">
+                  {editingQuotation ? "Edit Quotation" : "New Quotation"}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Fill in the details to generate a professional quotation</p>
+              </div>
+            </div>
+            <button
+              onClick={() => { setOpen(false); setForm(defaultForm()); setEditingQuotation(null); }}
+              className="h-9 w-9 rounded-full hover:bg-muted grid place-items-center transition-colors"
+            >
+              <X className="h-5 w-5 text-muted-foreground" />
+            </button>
+          </div>
+          {/* Scrollable body */}
+          <div className="flex-1 overflow-y-auto">
 
           <div className="p-6 space-y-6 flex-1 text-sm">
             {/* Top Info */}
             <div className="space-y-4">
               <div className="space-y-1">
-                <Label className="text-xs font-bold text-gray-700">Quotation No *</Label>
-                <Input value={editingQuotation?.quotation_number || "Q-NEW"} disabled className="bg-white border-gray-200 shadow-sm" />
+                <Label className="text-xs font-bold text-gray-700">Quotation No * <span className="text-gray-400 font-normal">(must be unique)</span></Label>
+                <Input
+                  value={form.quotation_number}
+                  onChange={(e) => setForm({ ...form, quotation_number: e.target.value })}
+                  placeholder="e.g. Q-00001"
+                  className="bg-white border-gray-200 shadow-sm font-mono"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-gray-700">Headline</Label>
@@ -807,8 +850,9 @@ function QuotationsPage() {
             </div>
 
           </div>
-        </SheetContent>
-      </Sheet>
+          </div>
+        </div>
+      )}
 
 
       {/* ── Preview ────────────────────────────────────────────────────────── */}

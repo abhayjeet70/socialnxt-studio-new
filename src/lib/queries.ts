@@ -133,7 +133,7 @@ export function useCurrentWorkspace() {
 
       const { data, error } = await supabase
         .from("workspace_members")
-        .select("workspace_id, role, agency_role, workspaces(id, name, custom_platforms)")
+        .select("workspace_id, role, agency_role, workspaces(id, name, custom_platforms, permissions)")
         .eq("user_id", user.id)
         .limit(1)
         .single();
@@ -147,6 +147,8 @@ export function useCurrentWorkspace() {
         agencyRole: data.agency_role as string || "Social Media Manager",
         workspaceName: (data.workspaces as unknown as { name: string })?.name ?? "My Workspace",
         customPlatforms: (data.workspaces as unknown as { custom_platforms: { name: string; category: string; iconUrl?: string; urlPattern?: string }[] })?.custom_platforms || [],
+        invoiceSettings: (data.workspaces as unknown as { permissions: any })?.permissions?._invoice_settings || {},
+        permissions: (data.workspaces as unknown as { permissions: any })?.permissions || {},
         userId: user.id,
         userEmail: user.email,
         userFullName: fullName,
@@ -159,11 +161,26 @@ export function useCurrentWorkspace() {
 export function useUpdateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ workspace_id, name, custom_platforms, permissions }: { workspace_id: string; name?: string; custom_platforms?: any, permissions?: any }) => {
+    mutationFn: async ({ workspace_id, name, custom_platforms, permissions, invoice_settings }: { workspace_id: string; name?: string; custom_platforms?: any, permissions?: any, invoice_settings?: any }) => {
+      const { data: currWs } = await supabase.from("workspaces").select("permissions").eq("id", workspace_id).single();
+      const currentPerms = currWs?.permissions || {};
+
       const updates: any = {};
       if (name !== undefined) updates.name = name;
       if (custom_platforms !== undefined) updates.custom_platforms = custom_platforms;
-      if (permissions !== undefined) updates.permissions = permissions;
+      
+      if (permissions !== undefined) {
+        // preserve _invoice_settings if it exists
+        const preservedInvoiceSettings = currentPerms._invoice_settings;
+        updates.permissions = { ...permissions };
+        if (preservedInvoiceSettings) updates.permissions._invoice_settings = preservedInvoiceSettings;
+      }
+
+      if (invoice_settings !== undefined) {
+        updates.permissions = updates.permissions || { ...currentPerms };
+        updates.permissions._invoice_settings = invoice_settings;
+      }
+
       const { error } = await supabase
         .from("workspaces")
         .update(updates)
@@ -930,6 +947,18 @@ export function useAddClientSocial() {
   });
 }
 
+export function useUpdateClientSocial() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, client_id, ...updates }: Partial<ClientSocial> & { id: string; client_id: string }) => {
+      const { data, error } = await supabase.from("client_socials").update(updates).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, v) => queryClient.invalidateQueries({ queryKey: ["client_socials", v.client_id] }),
+  });
+}
+
 export function useDeleteClientSocial() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -1094,6 +1123,7 @@ export type QuotationExtraFields = {
   company_tagline?: string;
   company_email?: string;
   company_website?: string;
+  [key: string]: any;
 };
 
 export type Quotation = {

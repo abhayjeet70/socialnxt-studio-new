@@ -53,6 +53,8 @@ function getPlatformIcon(platform: string) {
 
 const ASSIGNABLE_ROLES = ["Account/Social Media Manager", "Designer", "Video Editor"];
 
+const INDUSTRY_OPTIONS = ["Real Estate", "Food", "Fashion", "Perfume", "Beauty Products", "Other"];
+
 function ClientsPage() {
   const navigate = useNavigate();
   const { data: workspace } = useCurrentWorkspace();
@@ -368,7 +370,31 @@ function ClientsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Industry</Label>
-                  <Input value={industry} onChange={e => setIndustry(e.target.value)} placeholder="e.g. Health & Wellness" />
+                  <Select
+                    value={INDUSTRY_OPTIONS.includes(industry) ? industry : industry ? "Other" : ""}
+                    onValueChange={(v) => {
+                      if (v === "Other") {
+                        setIndustry("Other");
+                      } else {
+                        setIndustry(v);
+                      }
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select industry" /></SelectTrigger>
+                    <SelectContent>
+                      {INDUSTRY_OPTIONS.map((opt) => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {((INDUSTRY_OPTIONS.includes(industry) ? industry : industry ? "Other" : "") === "Other") && (
+                    <Input
+                      value={industry === "Other" ? "" : industry}
+                      onChange={e => setIndustry(e.target.value || "Other")}
+                      placeholder="Enter custom industry"
+                      className="mt-2"
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Billing Date (Day of month)</Label>
@@ -508,7 +534,31 @@ function ClientsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Industry</Label>
-                <Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} />
+                <Select
+                  value={INDUSTRY_OPTIONS.includes(editIndustry) ? editIndustry : editIndustry ? "Other" : ""}
+                  onValueChange={(v) => {
+                    if (v === "Other") {
+                      setEditIndustry("Other");
+                    } else {
+                      setEditIndustry(v);
+                    }
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select industry" /></SelectTrigger>
+                  <SelectContent>
+                    {INDUSTRY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {((INDUSTRY_OPTIONS.includes(editIndustry) ? editIndustry : editIndustry ? "Other" : "") === "Other") && (
+                  <Input
+                    value={editIndustry === "Other" ? "" : editIndustry}
+                    onChange={e => setEditIndustry(e.target.value || "Other")}
+                    placeholder="Enter custom industry"
+                    className="mt-2"
+                  />
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -654,31 +704,55 @@ function ClientsPage() {
       </div>
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className={`grid grid-cols-2 gap-4 mb-6 ${workspace?.role !== "employee" ? "md:grid-cols-6" : "md:grid-cols-3"}`}>
         {/* Total */}
         <div
           onClick={() => setStatusFilters([])}
-          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md ${statusFilters.length === 0 ? "border-foreground/40 ring-2 ring-foreground/10" : "border-border"}`}
+          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md flex flex-col justify-center ${statusFilters.length === 0 ? "border-foreground/40 ring-2 ring-foreground/10" : "border-border"}`}
         >
-          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Total Clients</p>
-          <p className="text-4xl font-bold text-foreground">{totalClients}</p>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1">Total Clients</p>
+          <p className="text-3xl font-bold text-foreground">{totalClients}</p>
         </div>
         {/* Active */}
         <div
           onClick={() => setStatusFilters(["Active"])}
-          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md ${statusFilters.length === 1 && statusFilters.includes("Active") ? "border-primary ring-2 ring-primary/20" : "border-border"}`}
+          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md flex flex-col justify-center ${statusFilters.length === 1 && statusFilters.includes("Active") ? "border-primary ring-2 ring-primary/20" : "border-border"}`}
         >
-          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Active</p>
-          <p className="text-4xl font-bold text-primary">{activeClients}</p>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1">Active</p>
+          <p className="text-3xl font-bold text-primary">{activeClients}</p>
         </div>
         {/* Inactive */}
         <div
           onClick={() => setStatusFilters(["Inactive"])}
-          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md ${statusFilters.length === 1 && statusFilters.includes("Inactive") ? "border-slate-400 ring-2 ring-slate-100" : "border-border"}`}
+          className={`rounded-2xl border bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-md flex flex-col justify-center ${statusFilters.length === 1 && statusFilters.includes("Inactive") ? "border-slate-400 ring-2 ring-slate-100" : "border-border"}`}
         >
-          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-2">Inactive</p>
-          <p className="text-4xl font-bold text-muted-foreground">{closedClients}</p>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1">Inactive</p>
+          <p className="text-3xl font-bold text-muted-foreground">{closedClients}</p>
         </div>
+
+        {/* Financials (Admin Only) */}
+        {workspace?.role !== "employee" && (
+          <>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><FileText className="w-3 h-3" /> Total Revenue</p>
+              <p className="text-2xl font-bold text-primary flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
+                {deals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Advance Paid</p>
+              <p className="text-2xl font-bold text-foreground flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
+                {deals.reduce((sum, d) => sum + (d.advance_paid || 0), 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
+              <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><AlertOctagon className="w-3 h-3 text-amber-500" /> Pending</p>
+              <p className="text-2xl font-bold text-amber-600 flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
+                {(deals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0) - deals.reduce((sum, d) => sum + (d.advance_paid || 0), 0)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
 

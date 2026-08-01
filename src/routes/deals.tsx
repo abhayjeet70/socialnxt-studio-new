@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 
 export const Route = createFileRoute("/deals")({
-  head: () => ({ meta: [{ title: "Deals — SocialNxt CRM" }] }),
+  head: () => ({ meta: [{ title: "Project Tracker — SocialNxt CRM" }] }),
   component: DealsPage,
 });
 
@@ -72,7 +72,7 @@ function DealsPage() {
     e.preventDefault();
     localStorage.setItem("socialnxt_deal_settings", JSON.stringify(dealSettings));
     setIsSettingsOpen(false);
-    toast.success("Deal settings saved.");
+    toast.success("Project Tracker settings saved.");
   };
 
   const isClient = workspace?.role === "client";
@@ -89,7 +89,7 @@ function DealsPage() {
   const handleCreateDeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspace) return;
-    if (!window.confirm("Are you sure you want to add this deal?")) return;
+    if (!window.confirm("Are you sure you want to add this project?")) return;
     try {
       const newDeal = await createDeal.mutateAsync({
         workspace_id: workspace.workspaceId,
@@ -101,7 +101,7 @@ function DealsPage() {
         days,
         stage: "New",
       });
-      toast.success("Deal created successfully!", {
+      toast.success("Project created successfully!", {
         action: {
           label: "Undo",
           onClick: () => deleteDeal.mutate({ id: (newDeal as any).id })
@@ -114,7 +114,7 @@ function DealsPage() {
       setAdvancePaid("");
       setDays("");
     } catch (err: any) {
-      toast.error("Failed to create deal: " + err.message);
+      toast.error("Failed to create project: " + err.message);
     }
   };
 
@@ -143,18 +143,18 @@ function DealsPage() {
           stage: editStage,
         },
       });
-      toast.success("Deal updated successfully!");
+      toast.success("Project updated successfully!");
       setEditDealTarget(null);
     } catch (err: any) {
-      toast.error("Failed to update deal: " + err.message);
+      toast.error("Failed to update project: " + err.message);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this deal? This cannot be undone.")) return;
+    if (!window.confirm("Delete this project? This cannot be undone.")) return;
     try {
       await deleteDeal.mutateAsync({ id });
-      toast.success("Deal deleted.");
+      toast.success("Project deleted.");
     } catch (err: any) {
       toast.error("Failed to delete: " + err.message);
     }
@@ -162,7 +162,7 @@ function DealsPage() {
 
   const handleExportDeals = () => {
     if (visibleDeals.length === 0) {
-      toast.error("No deals to export.");
+      toast.error("No projects to export.");
       return;
     }
 
@@ -299,12 +299,12 @@ function DealsPage() {
 
   return (
     <AppShell
-      title="Deals"
+      title="Project Tracker"
       subtitle="Kanban view of every active project across stages."
       actions={
         <div className="flex items-center gap-2">
           {canEdit && (
-            <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)} className="rounded-xl h-10 w-10 bg-white" title="Deals Settings">
+            <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)} className="rounded-xl h-10 w-10 bg-white" title="Project Tracker Settings">
               <Settings className="h-4 w-4" />
             </Button>
           )}
@@ -389,14 +389,14 @@ function DealsPage() {
                               <button
                                 onClick={() => openEditModal(d)}
                                 className="p-1 rounded-md text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors"
-                                title="Edit deal"
+                                title="Edit project"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </button>
                               <button
                                 onClick={() => handleDelete(d.id)}
                                 className="p-1 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
-                                title="Delete deal"
+                                title="Delete project"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>
@@ -444,7 +444,7 @@ function DealsPage() {
         <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Add New Deal</DialogTitle>
-            <DialogDescription>Track a new social media retainer, campaign, or content deal for a client.</DialogDescription>
+            <DialogDescription>Track a new social media retainer, campaign, or content project for a client.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateDeal} className="space-y-4 pt-2">
             <div className="space-y-2">

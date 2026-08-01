@@ -1216,3 +1216,7 @@ DROP POLICY IF EXISTS "Admins can delete posts" ON public.posts;
 CREATE POLICY "Users with delete_content permission can delete posts" ON public.posts FOR DELETE USING ( public.has_permission(workspace_id, 'delete_content') );
 
 NOTIFY pgrst, 'reload schema';
+
+
+-- Add invoice_settings to workspaces
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS invoice_settings JSONB DEFAULT '{}'::jsonb;
