@@ -1,0 +1,235 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-lift: 0 12px 24px -12px rgb(37 99 235 / 0.18), 0 4px 8px -4px rgb(15 23 42 / 0.08);
+}
+
+:root {
+  --radius: 0.875rem; /* 14px */
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.18 0.04 265);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.04 265);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.04 265);
+
+  /* Purple Theme */
+  --primary: oklch(0.55 0.2 310);
+  --primary-foreground: oklch(0.99 0 0);
+
+  --secondary: oklch(0.968 0.01 255);
+  --secondary-foreground: oklch(0.22 0.04 265);
+
+  --muted: oklch(0.97 0.01 255);
+  --muted-foreground: oklch(0.5 0.03 257);
+
+  --accent: oklch(0.955 0.025 263);
+  --accent-foreground: oklch(0.32 0.13 263);
+
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  --success: oklch(0.66 0.16 152);
+  --warning: oklch(0.78 0.16 75);
+  --info: oklch(0.7 0.13 230);
+
+  --border: oklch(0.92 0.012 255);
+  --input: oklch(0.92 0.012 255);
+  --ring: oklch(0.55 0.2 310);
+
+  /* Sidebar Purple */
+  --sidebar: oklch(0.28 0.12 310);
+  --sidebar-foreground: oklch(0.92 0.01 255);
+  --sidebar-muted: oklch(0.68 0.04 260);
+  --sidebar-active: oklch(0.55 0.2 310);
+
+  --chart-1: oklch(0.546 0.215 263);
+  --chart-2: oklch(0.7 0.13 230);
+  --chart-3: oklch(0.66 0.16 152);
+  --chart-4: oklch(0.78 0.16 75);
+  --chart-5: oklch(0.62 0.21 320);
+}
+
+.dark {
+  --background: oklch(0.16 0.03 265);
+  --foreground: oklch(0.97 0.01 255);
+  --card: oklch(0.2 0.04 265);
+  --card-foreground: oklch(0.97 0.01 255);
+  --popover: oklch(0.2 0.04 265);
+  --popover-foreground: oklch(0.97 0.01 255);
+  --primary: oklch(0.62 0.2 310);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.27 0.04 265);
+  --secondary-foreground: oklch(0.97 0.01 255);
+  --muted: oklch(0.27 0.04 265);
+  --muted-foreground: oklch(0.7 0.03 257);
+  --accent: oklch(0.3 0.06 263);
+  --accent-foreground: oklch(0.97 0.01 255);
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.62 0.2 310);
+  --sidebar: oklch(0.28 0.12 310);
+  --sidebar-foreground: oklch(0.92 0.01 255);
+  --sidebar-muted: oklch(0.68 0.04 260);
+  --sidebar-active: oklch(0.62 0.2 310);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body { font-family: var(--font-sans); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@utility card-soft {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+@utility lift {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lift);
+  }
+}
+
+/* Mobile table wrapper: negative horizontal margin + scroll */
+@utility mobile-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Safe area bottom (notched phones) */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Kanban scroll snap */
+.kanban-board {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.kanban-col {
+  scroll-snap-align: start;
+}
+
+/* On touch devices: always show card action buttons (no hover needed) */
+@media (hover: none) {
+  .touch-always-visible {
+    opacity: 1 !important;
+  }
+}
+
+/* Hide scrollbar but keep functionality */
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 0.5cm;
+  }
+  
+  .print-hide {
+    display: none !important;
+  }
+  
+  .print-overflow-visible {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  
+  .print-block {
+    display: block !important;
+    zoom: 0.65 !important; /* Scale down the entire block so it fits nicely on one page */
+  }
+  
+  .print-w-full {
+    width: 100% !important;
+    /* We no longer force min-width 100% because we want the table to keep its fixed layout proportions */
+  }
+
+  /* Make inputs/textareas print friendly (no scrollbars, no borders) */
+  input, textarea, select {
+    border: none !important;
+    background: transparent !important;
+    resize: none !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    -webkit-appearance: none;
+    padding: 0 !important;
+  }
+  
+  /* Avoid breaking inside table rows */
+  tr {
+    page-break-inside: avoid;
+  }
+
+  /* Keep background colors */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
