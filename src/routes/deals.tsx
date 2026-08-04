@@ -1,217 +1,112 @@
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Plus, IndianRupee, Calendar as CalIcon, User as UserIcon, Loader2, Trash2, GripVertical, Pencil, Download, Settings } from "lucide-react";
-import { useCurrentWorkspace, useDeals, useCreateDeal, useUpdateDealStage, useDeleteDeal, useActiveClients, useUpdateDeal, Deal } from "@/lib/queries";
-import { usePermissions } from "@/lib/permissions";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Calendar as CalIcon, Download, GripVertical, Users as UsersIcon } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { useCurrentWorkspace, usePosts, useUpdatePostStatus, useActiveClients, useWorkspaceMembers, Post } from "@/lib/queries";
+import { usePermissions } from "@/lib/permissions";
+import { InstagramLogo, FacebookLogo, LinkedInLogo, YouTubeLogo, TikTokLogo, TwitterLogo } from "@/components/social-icons";
 import { toast } from "sonner";
 
+const STATUSES = ["draft", "pending_approval", "changes_requested", "approved", "scheduled", "published", "failed"] as const;
+type Status = (typeof STATUSES)[number];
 
-const STAGES = ["New", "Planning", "Design", "Editing", "Review", "Completed"] as const;
-const STAGE_COLOR: Record<string, string> = {
-  New: "#64748B",
-  Planning: "#F59E0B",
-  Design: "#8B5CF6",
-  Editing: "#06B6D4",
-  Review: "#EC4899",
-  Completed: "#10B981",
+const STATUS_LABEL: Record<Status, string> = {
+  draft: "Draft",
+  pending_approval: "Pending Approval",
+  changes_requested: "Changes Requested",
+  approved: "Approved",
+  scheduled: "Scheduled",
+  published: "Published",
+  failed: "Failed",
 };
+
+const STATUS_COLOR: Record<Status, string> = {
+  draft: "#64748B",
+  pending_approval: "#F59E0B",
+  changes_requested: "#EF4444",
+  approved: "#10B981",
+  scheduled: "#06B6D4",
+  published: "#6366F1",
+  failed: "#DC2626",
+};
+
+function PlatformIcon({ platform }: { platform: string }) {
+  const size = 12;
+  switch (platform?.toLowerCase()) {
+    case "instagram": return <InstagramLogo width={size} height={size} />;
+    case "facebook": return <FacebookLogo width={size} height={size} />;
+    case "linkedin": return <LinkedInLogo width={size} height={size} />;
+    case "youtube": return <YouTubeLogo width={size} height={size} />;
+    case "tiktok": return <TikTokLogo width={size} height={size} />;
+    case "twitter": return <TwitterLogo width={size} height={size} />;
+    default: return null;
+  }
+}
 
 export function DealsPage() {
   const { data: workspace } = useCurrentWorkspace();
-  const { data: deals = [], isLoading } = useDeals(workspace?.workspaceId);
+  const { data: posts = [], isLoading } = usePosts(workspace?.workspaceId);
   const { data: clients = [] } = useActiveClients(workspace?.workspaceId);
-  const createDeal = useCreateDeal();
-  const updateStage = useUpdateDealStage();
-  const deleteDeal = useDeleteDeal();
+  const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
+  const updateStatus = useUpdatePostStatus();
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [clientName, setClientName] = useState("");
-  const [projectName, setProjectName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [advancePaid, setAdvancePaid] = useState("");
-  const [days, setDays] = useState("");
-
-  // Edit state
-  const [editDealTarget, setEditDealTarget] = useState<Deal | null>(null);
-  const [editClientName, setEditClientName] = useState("");
-  const [editProjectName, setEditProjectName] = useState("");
-  const [editAmount, setEditAmount] = useState("");
-  const [editAdvancePaid, setEditAdvancePaid] = useState("");
-  const [editDays, setEditDays] = useState("");
-  const [editStage, setEditStage] = useState("");
-  const updateDeal = useUpdateDeal();
+  const [selectedClientFilter, setSelectedClientFilter] = useState<string>("All Clients");
 
   // Drag state
-  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
   const dragCardId = useRef<string | null>(null);
-  const dragFromStage = useRef<string | null>(null);
-
-  // Settings state
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [dealSettings, setDealSettings] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("socialnxt_deal_settings") || '{"autoAssign":false,"notifyClient":false}');
-    } catch {
-      return { autoAssign: false, notifyClient: false };
-    }
-  });
-
-  const saveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    localStorage.setItem("socialnxt_deal_settings", JSON.stringify(dealSettings));
-    setIsSettingsOpen(false);
-    toast.success("Project Tracker settings saved.");
-  };
+  const dragFromStatus = useRef<string | null>(null);
 
   const isClient = workspace?.role === "client";
   const { hasPermission } = usePermissions();
   const canEdit = workspace?.role === "admin" || (workspace?.role === "employee" && hasPermission("access_deals"));
 
-  const visibleDeals = isClient
-    ? deals.filter((d) =>
-        d.client_name?.toLowerCase() === workspace?.userEmail?.split("@")[0]?.toLowerCase() ||
-        d.client_name?.toLowerCase() === workspace?.userFullName?.toLowerCase()
+  const visiblePosts = isClient
+    ? posts.filter((p) =>
+        p.client_name?.toLowerCase() === workspace?.userEmail?.split("@")[0]?.toLowerCase() ||
+        p.client_name?.toLowerCase() === workspace?.userFullName?.toLowerCase()
       )
-    : deals;
+    : selectedClientFilter === "All Clients"
+      ? posts
+      : posts.filter((p) => p.client_name === selectedClientFilter);
 
-  const handleCreateDeal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!workspace) return;
-    if (!window.confirm("Are you sure you want to add this project?")) return;
-    try {
-      const newDeal = await createDeal.mutateAsync({
-        workspace_id: workspace.workspaceId,
-        created_by: workspace.userId,
-        client_name: clientName,
-        project_name: projectName,
-        amount: Number(amount),
-        advance_paid: Number(advancePaid) || 0,
-        days,
-        stage: "New",
-      });
-      toast.success("Project created successfully!", {
-        action: {
-          label: "Undo",
-          onClick: () => deleteDeal.mutate({ id: (newDeal as any).id })
-        }
-      });
-      setIsDialogOpen(false);
-      setClientName("");
-      setProjectName("");
-      setAmount("");
-      setAdvancePaid("");
-      setDays("");
-    } catch (err: any) {
-      toast.error("Failed to create project: " + err.message);
-    }
-  };
-
-  const openEditModal = (d: Deal) => {
-    setEditDealTarget(d);
-    setEditClientName(d.client_name);
-    setEditProjectName(d.project_name);
-    setEditAmount(d.amount.toString());
-    setEditAdvancePaid((d.advance_paid || 0).toString());
-    setEditDays(d.days);
-    setEditStage(d.stage);
-  };
-
-  const handleEditDeal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editDealTarget) return;
-    try {
-      await updateDeal.mutateAsync({
-        id: editDealTarget.id,
-        updates: {
-          client_name: editClientName,
-          project_name: editProjectName,
-          amount: Number(editAmount),
-          advance_paid: Number(editAdvancePaid) || 0,
-          days: editDays,
-          stage: editStage,
-        },
-      });
-      toast.success("Project updated successfully!");
-      setEditDealTarget(null);
-    } catch (err: any) {
-      toast.error("Failed to update project: " + err.message);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this project? This cannot be undone.")) return;
-    try {
-      await deleteDeal.mutateAsync({ id });
-      toast.success("Project deleted.");
-    } catch (err: any) {
-      toast.error("Failed to delete: " + err.message);
-    }
-  };
-
-  const handleExportDeals = () => {
-    if (visibleDeals.length === 0) {
-      toast.error("No projects to export.");
+  const handleExport = () => {
+    if (visiblePosts.length === 0) {
+      toast.error("No tasks to export.");
       return;
     }
-
-    const headers = ["Client Name", "Project Name", "Amount (INR)", "Days", "Stage", "Created By", "Date Created"];
+    const headers = ["Client Name", "Topic", "Platform", "Status", "Scheduled For", "Date Created"];
     const csvContent = [
       headers.join(","),
-      ...visibleDeals.map(d => {
-        const ownerName = d.users?.full_name || d.users?.email || "Unknown";
-        const date = new Date(d.created_at).toLocaleDateString();
-        return `"${d.client_name}","${d.project_name}","${d.amount}","${d.days}","${d.stage}","${ownerName}","${date}"`;
-      })
+      ...visiblePosts.map((p) => {
+        const date = new Date(p.created_at).toLocaleDateString();
+        const scheduled = p.scheduled_for ? new Date(p.scheduled_for).toLocaleDateString() : "";
+        return `"${p.client_name || ""}","${(p.topic || p.content || "").replace(/"/g, '""').slice(0, 80)}","${p.platform || ""}","${p.status}","${scheduled}","${date}"`;
+      }),
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `deals_export_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `tasks_export_${new Date().toISOString().split("T")[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // ── Drag handlers ──
-  const handleDragStart = (e: React.DragEvent, dealId: string, stage: string) => {
-    dragCardId.current = dealId;
-    dragFromStage.current = stage;
-    e.dataTransfer.effectAllowed = "move";
-    // Ghost image will be the card itself via browser default
-  };
-
-  const handleDragOver = (e: React.DragEvent, stage: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverStage(stage);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetStage: string) => {
-    e.preventDefault();
-    setDragOverStage(null);
-    const id = dragCardId.current;
-    const fromStage = dragFromStage.current;
-    dragCardId.current = null;
-    dragFromStage.current = null;
-    if (!id || fromStage === targetStage) return;
-
-    updateStage.mutate(
-      { id, stage: targetStage },
+  const moveTo = (id: string, fromStatus: string, targetStatus: string) => {
+    if (!workspace || fromStatus === targetStatus) return;
+    updateStatus.mutate(
+      { id, status: targetStatus, workspace_id: workspace.workspaceId },
       {
         onSuccess: () => {
-          toast.success(`Moved to ${targetStage}`, {
+          toast.success(`Moved to ${STATUS_LABEL[targetStatus as Status] || targetStatus}`, {
             action: {
               label: "Undo",
-              onClick: () => updateStage.mutate({ id, stage: fromStage! })
-            }
+              onClick: () => updateStatus.mutate({ id, status: fromStatus, workspace_id: workspace.workspaceId }),
+            },
           });
         },
         onError: (err: any) => toast.error(err.message),
@@ -219,22 +114,46 @@ export function DealsPage() {
     );
   };
 
-  const handleDragEnd = () => {
-    setDragOverStage(null);
+  // ── Drag handlers ──
+  const handleDragStart = (e: React.DragEvent, postId: string, status: string) => {
+    dragCardId.current = postId;
+    dragFromStatus.current = status;
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent, status: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverStatus(status);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetStatus: string) => {
+    e.preventDefault();
+    setDragOverStatus(null);
+    const id = dragCardId.current;
+    const fromStatus = dragFromStatus.current;
     dragCardId.current = null;
-    dragFromStage.current = null;
+    dragFromStatus.current = null;
+    if (!id || !fromStatus) return;
+    moveTo(id, fromStatus, targetStatus);
+  };
+
+  const handleDragEnd = () => {
+    setDragOverStatus(null);
+    dragCardId.current = null;
+    dragFromStatus.current = null;
   };
 
   // ── Touch drag handlers (mobile) ──
   const touchCardId = useRef<string | null>(null);
-  const touchFromStage = useRef<string | null>(null);
+  const touchFromStatus = useRef<string | null>(null);
   const touchLastX = useRef<number>(0);
   const touchLastY = useRef<number>(0);
   const touchDragging = useRef<boolean>(false);
 
-  const handleTouchStart = (e: React.TouchEvent, dealId: string, stage: string) => {
-    touchCardId.current = dealId;
-    touchFromStage.current = stage;
+  const handleTouchStart = (e: React.TouchEvent, postId: string, status: string) => {
+    touchCardId.current = postId;
+    touchFromStatus.current = status;
     touchDragging.current = false;
     const t = e.touches[0];
     touchLastX.current = t.clientX;
@@ -247,333 +166,206 @@ export function DealsPage() {
     touchLastX.current = t.clientX;
     touchLastY.current = t.clientY;
     touchDragging.current = true;
-    // Prevent page scroll while dragging a card
     e.preventDefault();
 
-    // Highlight which column the finger is over
     const el = document.elementFromPoint(t.clientX, t.clientY);
-    const colEl = el?.closest("[data-stage]");
-    const hoverStage = colEl?.getAttribute("data-stage");
-    setDragOverStage(hoverStage || null);
+    const colEl = el?.closest("[data-status]");
+    const hoverStatus = colEl?.getAttribute("data-status");
+    setDragOverStatus(hoverStatus || null);
   };
 
   const handleTouchEnd = () => {
-    setDragOverStage(null);
+    setDragOverStatus(null);
     if (!touchDragging.current) {
-      // Tap — not a drag, clear state
       touchCardId.current = null;
-      touchFromStage.current = null;
+      touchFromStatus.current = null;
       return;
     }
     const el = document.elementFromPoint(touchLastX.current, touchLastY.current);
-    const colEl = el?.closest("[data-stage]");
-    const targetStage = colEl?.getAttribute("data-stage");
+    const colEl = el?.closest("[data-status]");
+    const targetStatus = colEl?.getAttribute("data-status");
     const id = touchCardId.current;
-    const fromStage = touchFromStage.current;
+    const fromStatus = touchFromStatus.current;
     touchCardId.current = null;
-    touchFromStage.current = null;
+    touchFromStatus.current = null;
     touchDragging.current = false;
-    if (!id || !targetStage || fromStage === targetStage) return;
-    updateStage.mutate(
-      { id, stage: targetStage },
-      {
-        onSuccess: () => {
-          toast.success(`Moved to ${targetStage}`, {
-            action: {
-              label: "Undo",
-              onClick: () => updateStage.mutate({ id, stage: fromStage! })
-            }
-          });
-        },
-        onError: (err: any) => toast.error(err.message),
-      }
-    );
+    if (!id || !fromStatus || !targetStatus) return;
+    moveTo(id, fromStatus, targetStatus);
   };
 
+  // ── Client-wise progress ──
+  const progressCounts = STATUSES.map((s) => ({
+    status: s,
+    count: visiblePosts.filter((p) => p.status === s).length,
+  })).filter((s) => s.count > 0);
+  const progressTotal = visiblePosts.length;
 
   return (
     <AppShell
       title="Project Tracker"
-      subtitle="Kanban view of every active project across stages."
+      subtitle="Kanban view of every client task, grouped by status."
       actions={
         <div className="flex items-center gap-2">
-          {canEdit && (
-            <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)} className="rounded-xl h-10 w-10 bg-white" title="Project Tracker Settings">
-              <Settings className="h-4 w-4" />
-            </Button>
+          {!isClient && (
+            <Select value={selectedClientFilter} onValueChange={setSelectedClientFilter}>
+              <SelectTrigger className="h-10 rounded-xl bg-white border-input w-[180px]">
+                <SelectValue placeholder="All Clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All Clients">All Clients</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
-          <Button variant="outline" onClick={handleExportDeals} className="rounded-xl h-10 bg-white">
+          <Button variant="outline" onClick={handleExport} className="rounded-xl h-10 bg-white">
             <Download className="h-4 w-4 mr-2" /> Export
           </Button>
-          {canEdit && (
-            <Button onClick={() => setIsDialogOpen(true)} className="rounded-xl h-10">
-              <Plus className="h-4 w-4 mr-2" /> Add Deal
-            </Button>
-          )}
         </div>
       }
     >
-      <div className="overflow-x-auto kanban-board -mx-1 px-1 pb-4">
-        <div className="grid grid-flow-col auto-cols-[min(280px,80vw)] gap-4 min-w-full pb-2">
-          {STAGES.map((stage) => {
-            const items = visibleDeals.filter((d) => d.stage === stage);
-            const total = items.reduce((s, d) => s + d.amount, 0);
-            const isOver = dragOverStage === stage;
-
-            return (
+      {/* Client-wise progress bar */}
+      {progressTotal > 0 && (
+        <div className="card-soft p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold">
+              {selectedClientFilter === "All Clients" ? "All Clients" : selectedClientFilter} — Task Progress
+            </span>
+            <span className="text-xs text-muted-foreground">{progressTotal} task{progressTotal === 1 ? "" : "s"}</span>
+          </div>
+          <div className="flex h-2.5 w-full rounded-full overflow-hidden bg-muted">
+            {progressCounts.map(({ status, count }) => (
               <div
-                key={stage}
-                data-stage={stage}
-                className={`kanban-col rounded-2xl p-3 transition-colors ${
-                  isOver ? "bg-primary/5 ring-2 ring-primary/30" : "bg-muted/40"
-                }`}
-                onDragOver={canEdit ? (e) => handleDragOver(e, stage) : undefined}
-                onDrop={canEdit ? (e) => handleDrop(e, stage) : undefined}
-                onDragLeave={() => setDragOverStage(null)}
-              >
-                {/* Column header */}
-                <div className="flex items-center justify-between px-2 mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: STAGE_COLOR[stage] }} />
-                    <span className="text-sm font-semibold">{stage}</span>
+                key={status}
+                style={{ width: `${(count / progressTotal) * 100}%`, background: STATUS_COLOR[status] }}
+                title={`${STATUS_LABEL[status]}: ${count}`}
+              />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5">
+            {progressCounts.map(({ status, count }) => (
+              <div key={status} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[status] }} />
+                {STATUS_LABEL[status]} <span className="font-semibold text-foreground">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="py-20 text-center text-muted-foreground text-sm">Loading tasks…</div>
+      ) : (
+        <div className="overflow-x-auto kanban-board -mx-1 px-1 pb-4">
+          <div className="grid grid-flow-col auto-cols-[min(280px,80vw)] gap-4 min-w-full pb-2">
+            {STATUSES.map((status) => {
+              const items = visiblePosts.filter((p) => p.status === status);
+              const isOver = dragOverStatus === status;
+
+              return (
+                <div
+                  key={status}
+                  data-status={status}
+                  className={`kanban-col rounded-2xl p-3 transition-colors ${
+                    isOver ? "bg-primary/5 ring-2 ring-primary/30" : "bg-muted/40"
+                  }`}
+                  onDragOver={canEdit ? (e) => handleDragOver(e, status) : undefined}
+                  onDrop={canEdit ? (e) => handleDrop(e, status) : undefined}
+                  onDragLeave={() => setDragOverStatus(null)}
+                >
+                  {/* Column header */}
+                  <div className="flex items-center gap-2 px-2 mb-3">
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: STATUS_COLOR[status] }} />
+                    <span className="text-sm font-semibold truncate">{STATUS_LABEL[status]}</span>
                     <span className="text-xs text-muted-foreground">{items.length}</span>
                   </div>
-                  <span className="text-[11px] text-muted-foreground">₹{(total / 1000).toFixed(0)}k</span>
-                </div>
 
-                {/* Drop zone hint */}
-                {isOver && items.length === 0 && (
-                  <div className="mb-2 border-2 border-dashed border-primary/40 rounded-xl h-16 flex items-center justify-center text-xs text-primary/60">
-                    Drop here
-                  </div>
-                )}
-
-                {/* Deal cards */}
-                <div className="space-y-2.5">
-                  {items.map((d) => {
-                    const ownerName = d.users?.full_name || d.users?.email?.split("@")[0] || "Unknown";
-                    return (
-                      <div
-                        key={d.id}
-                        draggable={canEdit}
-                        onDragStart={canEdit ? (e) => handleDragStart(e, d.id, stage) : undefined}
-                        onDragEnd={canEdit ? handleDragEnd : undefined}
-                        onTouchStart={canEdit ? (e) => handleTouchStart(e, d.id, stage) : undefined}
-                        onTouchMove={canEdit ? handleTouchMove : undefined}
-                        onTouchEnd={canEdit ? handleTouchEnd : undefined}
-                        className={`card-soft p-3.5 relative group transition-all ${
-                          canEdit ? "cursor-grab active:cursor-grabbing active:opacity-60 active:scale-95" : ""
-                        }`}
-                        style={{
-                          borderTop: `3px solid ${STAGE_COLOR[stage]}`,
-                          touchAction: canEdit ? "none" : "auto",
-                        }}
-                      >
-                        {/* Drag handle + client name row */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {canEdit && (
-                              <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 group-hover:text-muted-foreground transition-colors" />
-                            )}
-                            <div className="text-xs text-muted-foreground truncate">{d.client_name}</div>
-                          </div>
-
-                          {canEdit && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 touch-always-visible transition-all shrink-0">
-                              <button
-                                onClick={() => openEditModal(d)}
-                                className="p-1 rounded-md text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors"
-                                title="Edit project"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(d.id)}
-                                className="p-1 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
-                                title="Delete project"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="font-semibold text-sm mt-0.5 leading-snug">{d.project_name}</div>
-                        <div className="mt-3 flex items-center gap-1 text-sm font-semibold text-primary">
-                          <IndianRupee className="h-3.5 w-3.5" />
-                          {d.amount.toLocaleString("en-IN")}
-                        </div>
-                        <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-                          <span className="flex items-center gap-1"><UserIcon className="h-3 w-3" /> {ownerName.split(" ")[0]}</span>
-                          <span className="flex items-center gap-1"><CalIcon className="h-3 w-3" /> {d.days}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Drop zone hint when column has cards */}
-                  {isOver && items.length > 0 && (
-                    <div className="border-2 border-dashed border-primary/40 rounded-xl h-10 flex items-center justify-center text-xs text-primary/60">
+                  {/* Drop zone hint */}
+                  {isOver && items.length === 0 && (
+                    <div className="mb-2 border-2 border-dashed border-primary/40 rounded-xl h-16 flex items-center justify-center text-xs text-primary/60">
                       Drop here
                     </div>
                   )}
 
-                  {canEdit && (
-                    <button
-                      onClick={() => setIsDialogOpen(true)}
-                      className="w-full text-xs text-muted-foreground hover:text-primary py-2 rounded-xl border border-dashed border-border hover:border-primary/40 transition-colors"
-                    >
-                      + Add deal
-                    </button>
-                  )}
+                  {/* Task cards */}
+                  <div className="space-y-2.5">
+                    {items.map((p: Post) => {
+                      const assignees = (p.assigned_to || [])
+                        .map((uid) => members.find((m) => m.user_id === uid))
+                        .filter(Boolean);
+                      return (
+                        <div
+                          key={p.id}
+                          draggable={canEdit}
+                          onDragStart={canEdit ? (e) => handleDragStart(e, p.id, status) : undefined}
+                          onDragEnd={canEdit ? handleDragEnd : undefined}
+                          onTouchStart={canEdit ? (e) => handleTouchStart(e, p.id, status) : undefined}
+                          onTouchMove={canEdit ? handleTouchMove : undefined}
+                          onTouchEnd={canEdit ? handleTouchEnd : undefined}
+                          className={`card-soft p-3.5 relative group transition-all ${
+                            canEdit ? "cursor-grab active:cursor-grabbing active:opacity-60 active:scale-95" : ""
+                          }`}
+                          style={{
+                            borderTop: `3px solid ${STATUS_COLOR[status]}`,
+                            touchAction: canEdit ? "none" : "auto",
+                          }}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {canEdit && (
+                              <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 group-hover:text-muted-foreground transition-colors" />
+                            )}
+                            <div className="text-xs text-muted-foreground truncate">{p.client_name || "Unassigned"}</div>
+                          </div>
+
+                          <div className="font-semibold text-sm mt-0.5 leading-snug line-clamp-2">
+                            {p.topic || p.content || "Untitled task"}
+                          </div>
+
+                          {(p.platforms?.length || p.platform) && (
+                            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                              {(p.platforms && p.platforms.length > 0 ? p.platforms : [p.platform!]).map((plat) => (
+                                <span key={plat} className="h-4 w-4 rounded-[3px] overflow-hidden grid place-items-center bg-muted">
+                                  <PlatformIcon platform={plat} />
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
+                            <span className="flex items-center gap-1 truncate">
+                              <UsersIcon className="h-3 w-3 shrink-0" />
+                              {assignees.length > 0
+                                ? assignees.map((m: any) => (m.users?.full_name || m.users?.email || "?").split(" ")[0]).join(", ")
+                                : "Unassigned"}
+                            </span>
+                            {p.scheduled_for && (
+                              <span className="flex items-center gap-1 shrink-0">
+                                <CalIcon className="h-3 w-3" />
+                                {new Date(p.scheduled_for).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {isOver && items.length > 0 && (
+                      <div className="border-2 border-dashed border-primary/40 rounded-xl h-10 flex items-center justify-center text-xs text-primary/60">
+                        Drop here
+                      </div>
+                    )}
+
+                    {items.length === 0 && !isOver && (
+                      <div className="text-center text-xs text-muted-foreground py-6">No tasks</div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
-
-      {/* Add Deal Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>Add New Deal</DialogTitle>
-            <DialogDescription>Track a new social media retainer, campaign, or content project for a client.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateDeal} className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label>Client Name</Label>
-              <Select value={clientName} onValueChange={setClientName} required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a client..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.filter(c => c.status !== "Closed").map((c) => (
-                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Project Name</Label>
-              <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Amount (₹)</Label>
-                <Input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="e.g. 50000" />
-              </div>
-              <div className="space-y-2">
-                <Label>Advance (₹)</Label>
-                <Input type="number" min="0" value={advancePaid} onChange={(e) => setAdvancePaid(e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>Days / Duration</Label>
-                <Input value={days} onChange={(e) => setDays(e.target.value)} required placeholder="e.g. 14 Days" />
-              </div>
-            </div>
-            <Button type="submit" className="w-full" disabled={createDeal.isPending}>
-              {createDeal.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Add Deal
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Deal Dialog */}
-      <Dialog open={!!editDealTarget} onOpenChange={(open) => !open && setEditDealTarget(null)}>
-        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>Edit Deal</DialogTitle>
-            <DialogDescription>Edit the scope, value, or stage of this social media deal.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleEditDeal} className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label>Client Name</Label>
-              <Select value={editClientName} onValueChange={setEditClientName} required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a client..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.filter(c => c.status !== "Closed").map((c) => (
-                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Project Name</Label>
-              <Input value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} required placeholder="e.g. Instagram & Facebook Management" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Amount (₹)</Label>
-                <Input type="number" min="0" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} required placeholder="e.g. 50000" />
-              </div>
-              <div className="space-y-2">
-                <Label>Advance (₹)</Label>
-                <Input type="number" min="0" value={editAdvancePaid} onChange={(e) => setEditAdvancePaid(e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>Days / Duration</Label>
-                <Input value={editDays} onChange={(e) => setEditDays(e.target.value)} required placeholder="e.g. 14 Days" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Stage</Label>
-              <Select value={editStage} onValueChange={setEditStage} required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select stage..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {STAGES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit" className="w-full" disabled={updateDeal.isPending}>
-              {updateDeal.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Save Changes
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Settings Dialog */}
-      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent className="sm:max-w-[425px] w-[95vw] max-w-[95vw] p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>Deals Settings</DialogTitle>
-            <DialogDescription>Configure automation and display preferences for deals.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={saveSettings} className="space-y-4 pt-2">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Auto-assign Deals</Label>
-                <div className="text-xs text-muted-foreground">Automatically assign new deals to the account manager.</div>
-              </div>
-              <Switch 
-                checked={dealSettings.autoAssign} 
-                onCheckedChange={(c) => setDealSettings({ ...dealSettings, autoAssign: c })} 
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Client Notifications</Label>
-                <div className="text-xs text-muted-foreground">Notify client when a deal moves to "Review".</div>
-              </div>
-              <Switch 
-                checked={dealSettings.notifyClient} 
-                onCheckedChange={(c) => setDealSettings({ ...dealSettings, notifyClient: c })} 
-              />
-            </div>
-            <Button type="submit" className="w-full">
-              Save Settings
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      )}
     </AppShell>
   );
 }

@@ -8,12 +8,13 @@ export interface InvoiceAdapterProps {
   quotation: Quotation | null;
   clientName: string;
   initialLineItems?: any[];
+  initialDueDate?: string;
   readonly?: boolean;
   onSave?: (payload: any, isNew: boolean) => void;
   onClose: () => void;
 }
 
-export function InvoiceAdapter({ quotation, clientName, initialLineItems, readonly, onSave, onClose }: InvoiceAdapterProps) {
+export function InvoiceAdapter({ quotation, clientName, initialLineItems, initialDueDate, readonly, onSave, onClose }: InvoiceAdapterProps) {
   const isNew = !quotation;
   const { data: workspace } = useCurrentWorkspace();
   const invoiceSettings = (() => {
@@ -80,6 +81,7 @@ export function InvoiceAdapter({ quotation, clientName, initialLineItems, readon
         ...empty,
         clientName: clientName,
         lineItems: parsedLineItems,
+        dueDate: initialDueDate || empty.dueDate,
       });
     }
     

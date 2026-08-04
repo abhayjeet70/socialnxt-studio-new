@@ -18,6 +18,7 @@ import { PLATFORM_COLOR } from "@/lib/demo-data";
 import { supabase } from "@/lib/supabase";
 import { subDays, subMonths, format, eachDayOfInterval, eachMonthOfInterval, eachHourOfInterval, startOfToday, endOfToday } from "date-fns";
 import { useCurrentWorkspace, useDashboardStats, usePosts, useClients, useWorkspaceMembers, useMeetings, useSocialAccounts, useDeals } from "@/lib/queries";
+import { getDealGrossAmount } from "@/lib/dealUtils";
 
 export function Dashboard() {
   const { data: workspace, isLoading: workspaceLoading } = useCurrentWorkspace();
@@ -147,8 +148,9 @@ export function Dashboard() {
     if (filterAfterDate && new Date(dateStr) < filterAfterDate) return;
     const key = getBucketKey(dateStr);
     if (timelineMap[key]) {
-      timelineMap[key].totalRevenue += Number(d.amount || 0);
-      timelineMap[key].pendingRevenue += Number((d.amount || 0) - (d.advance_paid || 0));
+      const gross = getDealGrossAmount(d);
+      timelineMap[key].totalRevenue += gross;
+      timelineMap[key].pendingRevenue += gross - (d.advance_paid || 0);
     }
   });
 
@@ -384,7 +386,7 @@ export function Dashboard() {
         <div className="card-soft p-5 lg:col-span-2 xl:col-span-1">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
             <div className="text-lg font-bold">
-              Performance Overview 
+              Performance Overview
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
               <div className="flex bg-muted/50 p-1 rounded-xl overflow-x-auto scrollbar-hide">
@@ -455,12 +457,10 @@ export function Dashboard() {
                       name
                     ]}
                   />
-                  {chartMetric === "Revenue" && (
-                    <>
-                      <Area type="monotone" name="Total Revenue" dataKey="totalRevenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#10b981', strokeWidth: 0 }} />
-                      <Area type="monotone" name="Pending Payments" dataKey="pendingRevenue" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorPending)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />
-                    </>
-                  )}
+                  {chartMetric === "Revenue" && [
+                    <Area key="totalRevenue" type="monotone" name="Total Revenue" dataKey="totalRevenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#10b981', strokeWidth: 0 }} />,
+                    <Area key="pendingRevenue" type="monotone" name="Pending Payments" dataKey="pendingRevenue" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorPending)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />,
+                  ]}
                   {chartMetric === "Clients Onboarded" && (
                     <Area type="monotone" name="Clients" dataKey="clients" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorClients)" activeDot={{ r: 6 }} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} />
                   )}

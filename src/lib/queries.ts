@@ -59,6 +59,15 @@ export type Meeting = {
   users?: Partial<User>; // author info via join
 };
 
+export type DealPayment = {
+  id: string;
+  amount: number;
+  date: string;
+  method: string;
+  note?: string;
+  created_at: string;
+};
+
 export type Deal = {
   id: string;
   workspace_id: string;
@@ -69,6 +78,7 @@ export type Deal = {
   payment_date?: string | null;
   payment_method?: string | null;
   payment_note?: string | null;
+  payment_history?: DealPayment[];
   days: string;
   stage: string;
   created_by: string;
@@ -501,7 +511,7 @@ export function useMeetings(workspaceId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("meetings")
-        .select("*, users(id, full_name, email)")
+        .select("*, users!meetings_created_by_fkey(id, full_name, email)")
         .eq("workspace_id", workspaceId!)
         .order("scheduled_at", { ascending: true });
       if (error) throw error;

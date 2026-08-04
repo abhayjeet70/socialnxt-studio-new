@@ -11,6 +11,7 @@ import { OnboardingPage } from "@/routes/onboarding";
 import { ClientsPage } from "@/routes/clients";
 import { ClientDetailPage } from "@/routes/clients_.$clientId";
 import { TasksPage } from "@/routes/tasks";
+import { ApprovalsPage } from "@/routes/approvals";
 import { CalendarPage } from "@/routes/calendar";
 import { MediaPage } from "@/routes/media";
 import { MeetingsPage } from "@/routes/meetings";
@@ -176,6 +177,14 @@ export function AppRoutes() {
             element={
               <Page title="Content Calendar — SocialNxt CRM">
                 <CalendarPage />
+              </Page>
+            }
+          />
+          <Route
+            path="/approvals"
+            element={
+              <Page title="Approvals — SocialNxt CRM">
+                <ApprovalsPage />
               </Page>
             }
           />

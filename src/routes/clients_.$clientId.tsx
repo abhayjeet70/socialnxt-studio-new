@@ -11,15 +11,16 @@ import {
   useCurrentWorkspace, useClients, usePosts, useIssues,
   useClientSocials, useAddClientSocial, useDeleteClientSocial, useUpdateClientSocial, useUpdatePostStatus, useDeals, useWorkspaceMembers, useUpdateClient,
   useCreateDeal, useUpdateDeal, useDeleteDeal,
-  useQuotations, useCreateQuotation, useUpdateQuotation, useDeleteQuotation, type Quotation
+  useQuotations, useCreateQuotation, useUpdateQuotation, useDeleteQuotation, type Quotation, type DealPayment
 } from "@/lib/queries";
 
 import { InvoiceAdapter } from "@/components/invoices/InvoiceAdapter";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
+import { getDealGrossAmount, getDealGstRate } from "@/lib/dealUtils";
 import {
   ArrowLeft, Loader2, ExternalLink, LogIn, Trash2, Plus, Mail, Building2,
   CheckCircle2, ListTodo, FileText, Receipt, KanbanSquare, AlertOctagon, Copy, IndianRupee,
-  Instagram, Facebook, Linkedin, Youtube, Users, Pencil, X, Phone, Calendar
+  Instagram, Facebook, Linkedin, Youtube, Users, Pencil, X, Phone, Calendar, Repeat
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,6 +43,46 @@ const INDUSTRY_OPTIONS = ["Real Estate", "Food", "Fashion", "Perfume", "Beauty P
 function getClientAvatarColor(name: string): string {
   const idx = name.charCodeAt(0) % CLIENT_AVATAR_COLORS.length;
   return CLIENT_AVATAR_COLORS[idx];
+}
+
+/** Formats a Date using its LOCAL calendar fields (unlike toISOString(),
+ *  which converts through UTC and rolls the date back a day in positive
+ *  UTC-offset timezones, e.g. IST). */
+function toLocalISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function getNextBillingDateISO(billingDay: number): string {
+  const today = new Date();
+  const day = Math.min(Math.max(billingDay, 1), 28);
+  let due = new Date(today.getFullYear(), today.getMonth(), day);
+  due.setHours(0, 0, 0, 0);
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (due < todayStart) {
+    due = new Date(today.getFullYear(), today.getMonth() + 1, day);
+  }
+  return toLocalISODate(due);
+}
+
+/** Next un-logged billing cycle: one month after the most recently logged
+ *  revenue record (so deleting a month's record makes the next log fill
+ *  that same gap instead of jumping ahead to the current calendar month). */
+function getNextLogDateISO(existingDeals: any[], billingDay?: number | null): string {
+  const day = billingDay ? Math.min(Math.max(billingDay, 1), 28) : new Date().getDate();
+
+  if (existingDeals.length > 0) {
+    const latest = existingDeals.reduce((max: Date, d: any) => {
+      const dt = new Date(d.payment_date || d.created_at);
+      return dt > max ? dt : max;
+    }, new Date(0));
+    const next = new Date(latest.getFullYear(), latest.getMonth() + 1, day);
+    return toLocalISODate(next);
+  }
+
+  return billingDay ? getNextBillingDateISO(billingDay) : toLocalISODate(new Date());
 }
 
 function getInitials(name: string): string {
@@ -138,6 +179,11 @@ export function ClientDetailPage() {
   const [dealNote, setDealNote] = useState("");
   const [dealGst, setDealGst] = useState<number>(18);
 
+  const [payAmount, setPayAmount] = useState(0);
+  const [payDate, setPayDate] = useState("");
+  const [payMethod, setPayMethod] = useState("UPI");
+  const [payNote, setPayNote] = useState("");
+
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Quotation | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<any>({
@@ -174,12 +220,13 @@ export function ClientDetailPage() {
   const clientIssues = issues.filter((i: any) => (i.client_name || "").toLowerCase() === name.toLowerCase());
 
   const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === name.toLowerCase());
-  
-  const getDealGross = (d: any) => {
-    const match = d.payment_note?.match(/\[GST:(\d+)\]/);
-    const gstRate = match ? Number(match[1]) : 18;
-    return (d.amount || 0) * (1 + gstRate / 100);
-  };
+
+  // Re-resolve the deal being edited against the live query cache, so the
+  // payment history list reflects newly logged payments immediately.
+  const liveDealTarget = dealTarget ? (deals.find(d => d.id === dealTarget.id) || dealTarget) : null;
+  const dealPaymentHistory: DealPayment[] = liveDealTarget?.payment_history || [];
+
+  const getDealGross = getDealGrossAmount;
 
   const totalRevenue = clientDeals.reduce((sum, d) => sum + getDealGross(d), 0);
   const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
@@ -189,9 +236,8 @@ export function ClientDetailPage() {
 
   const handleGenerateInvoice = () => {
     const items = clientDeals.map(d => {
-      const match = d.payment_note?.match(/\[GST:(\d+)\]/);
-      const gstRate = match ? Number(match[1]) : 18;
-      
+      const gstRate = getDealGstRate(d.payment_note);
+
       return {
         description: d.project_name || 'Revenue Record',
         qty: 1,
@@ -203,10 +249,14 @@ export function ClientDetailPage() {
       };
     });
 
+    const dueDate = client.billing_date
+      ? getNextBillingDateISO(client.billing_date)
+      : new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
     setInvoiceForm({
       status: "Draft",
       issue_date: new Date().toISOString(),
-      valid_until: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
+      valid_until: new Date(dueDate).toISOString(),
       line_items: items.length > 0 ? items : [{ description: "", qty: 1, unit: "Unit", unit_price: 0, hsn_sac: "9983" }],
       tax_rate: 18,
       extra_fields: { company_tagline: `Invoice INV-NEW`, source: "Client Management" }
@@ -358,12 +408,16 @@ export function ClientDetailPage() {
   };
 
   const openDeal = (deal?: any) => {
+    setPayAmount(0);
+    setPayDate("");
+    setPayMethod("UPI");
+    setPayNote("");
     if (deal) {
       setDealTarget(deal);
       setDealProject(deal.project_name || "");
       setDealAmount(deal.amount || 0);
       setDealAdvance(deal.advance_paid || 0);
-      setDealDate(deal.payment_date || new Date().toISOString().split("T")[0]);
+      setDealDate(deal.payment_date || toLocalISODate(new Date()));
       setDealMethod(deal.payment_method || "UPI");
       
       const rawNote = deal.payment_note || "";
@@ -375,11 +429,37 @@ export function ClientDetailPage() {
       setDealProject("");
       setDealAmount(0);
       setDealAdvance(0);
-      setDealDate(new Date().toISOString().split("T")[0]);
+      setDealDate(getNextLogDateISO(clientDeals, client.billing_date));
       setDealMethod("UPI");
       setDealNote("");
       setDealGst(18);
     }
+    setDealOpen(true);
+  };
+
+  const openRepeatDeal = (deal: any) => {
+    setPayAmount(0);
+    setPayDate("");
+    setPayMethod("UPI");
+    setPayNote("");
+    setDealTarget(null);
+    setDealProject(deal.project_name || "");
+    setDealAmount(deal.amount || 0);
+    setDealAdvance(0);
+
+    const day = client.billing_date
+      ? Math.min(Math.max(client.billing_date, 1), 28)
+      : (deal.payment_date ? new Date(deal.payment_date).getDate() : new Date().getDate());
+    const base = deal.payment_date ? new Date(deal.payment_date) : new Date();
+    const nextMonth = new Date(base.getFullYear(), base.getMonth() + 1, day);
+    setDealDate(toLocalISODate(nextMonth));
+
+    setDealMethod(deal.payment_method || "UPI");
+    const rawNote = deal.payment_note || "";
+    const match = rawNote.match(/\[GST:(\d+)\]/);
+    setDealGst(match ? Number(match[1]) : 18);
+    setDealNote(rawNote.replace(/\[GST:\d+\]/, '').trim());
+
     setDealOpen(true);
   };
 
@@ -398,6 +478,15 @@ export function ClientDetailPage() {
         onError: (err: any) => toast.error(err.message),
       });
     } else {
+      const initialHistory: DealPayment[] = dealAdvance > 0 ? [{
+        id: crypto.randomUUID(),
+        amount: dealAdvance,
+        date: dealDate,
+        method: dealMethod,
+        note: "Initial advance",
+        created_at: new Date().toISOString(),
+      }] : [];
+
       createDeal.mutate({
         workspace_id: ws,
         client_name: name,
@@ -407,6 +496,7 @@ export function ClientDetailPage() {
         payment_date: dealDate,
         payment_method: dealMethod,
         payment_note: finalNote,
+        payment_history: initialHistory,
         days: "30",
         stage: "Active",
         created_by: workspace?.userId || "",
@@ -415,6 +505,58 @@ export function ClientDetailPage() {
         onError: (err: any) => toast.error(err.message),
       });
     }
+  };
+
+  const handleAddPayment = () => {
+    if (!liveDealTarget) {
+      toast.error("Save the record first, then log additional payments.");
+      return;
+    }
+    if (!payAmount || payAmount <= 0) {
+      toast.error("Enter a payment amount");
+      return;
+    }
+    const entry: DealPayment = {
+      id: crypto.randomUUID(),
+      amount: payAmount,
+      date: payDate || toLocalISODate(new Date()),
+      method: payMethod,
+      note: payNote.trim() || undefined,
+      created_at: new Date().toISOString(),
+    };
+    const newHistory = [...dealPaymentHistory, entry];
+    const newAdvance = (liveDealTarget.advance_paid || 0) + payAmount;
+
+    updateDeal.mutate({
+      id: liveDealTarget.id,
+      updates: { advance_paid: newAdvance, payment_history: newHistory },
+    }, {
+      onSuccess: () => {
+        toast.success("Payment logged");
+        setDealAdvance(newAdvance);
+        setPayAmount(0);
+        setPayDate("");
+        setPayMethod("UPI");
+        setPayNote("");
+      },
+      onError: (err: any) => toast.error(err.message),
+    });
+  };
+
+  const handleDeletePayment = (paymentId: string) => {
+    if (!liveDealTarget) return;
+    if (!confirm("Remove this payment from history?")) return;
+    const removed = dealPaymentHistory.find(p => p.id === paymentId);
+    const newHistory = dealPaymentHistory.filter(p => p.id !== paymentId);
+    const newAdvance = Math.max(0, (liveDealTarget.advance_paid || 0) - (removed?.amount || 0));
+
+    updateDeal.mutate({
+      id: liveDealTarget.id,
+      updates: { advance_paid: newAdvance, payment_history: newHistory },
+    }, {
+      onSuccess: () => { toast.success("Payment removed"); setDealAdvance(newAdvance); },
+      onError: (err: any) => toast.error(err.message),
+    });
   };
 
   // helpers
@@ -765,6 +907,7 @@ export function ClientDetailPage() {
                       </div>
                       {isStaff && (
                         <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" title="Repeat next month" onClick={() => openRepeatDeal(d)}><Repeat className="h-4 w-4" /></Button>
                           <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => openDeal(d)}><Pencil className="h-4 w-4" /></Button>
                           <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => { if(confirm("Delete this record?")) deleteDeal.mutate({id: d.id}); }}><Trash2 className="h-4 w-4" /></Button>
                         </div>
@@ -1104,12 +1247,58 @@ export function ClientDetailPage() {
 
             {/* History Section */}
             <div className="space-y-3">
-              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest px-1">History</span>
-              <div className="border border-dashed border-border rounded-xl p-8 text-center bg-white shadow-sm">
-                <span className="text-sm text-muted-foreground">No payments recorded yet.</span>
-              </div>
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest px-1">Payment History</span>
+
+              {dealPaymentHistory.length === 0 ? (
+                <div className="border border-dashed border-border rounded-xl p-8 text-center bg-white shadow-sm">
+                  <span className="text-sm text-muted-foreground">No payments recorded yet.</span>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-border shadow-sm divide-y divide-border overflow-hidden">
+                  {[...dealPaymentHistory].sort((a, b) => (a.date < b.date ? 1 : -1)).map((p) => (
+                    <div key={p.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">₹{p.amount.toLocaleString("en-IN")} <span className="text-xs text-muted-foreground font-normal">· {p.method}</span></div>
+                        <div className="text-xs text-muted-foreground truncate">{new Date(p.date).toLocaleDateString()}{p.note ? ` · ${p.note}` : ""}</div>
+                      </div>
+                      <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => handleDeletePayment(p.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {liveDealTarget ? (
+                <div className="bg-white rounded-xl border border-border shadow-sm p-4 space-y-3">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Log a payment</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input type="number" placeholder="Amount" className="h-9 border-primary/20 focus-visible:ring-primary" value={payAmount || ""} onChange={e => setPayAmount(Number(e.target.value) || 0)} />
+                    <Input type="date" className="h-9 border-primary/20 focus-visible:ring-primary" value={payDate} onChange={e => setPayDate(e.target.value)} />
+                    <Select value={payMethod} onValueChange={setPayMethod}>
+                      <SelectTrigger className="h-9 border-primary/20 focus-visible:ring-primary">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UPI">UPI</SelectItem>
+                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Card">Card</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input placeholder="Note (optional)" className="h-9 border-primary/20 focus-visible:ring-primary" value={payNote} onChange={e => setPayNote(e.target.value)} />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="button" size="sm" className="h-8 px-4 rounded-lg bg-[#0F4C3A] hover:bg-[#0F4C3A]/90 text-white" onClick={handleAddPayment} disabled={updateDeal.isPending}>
+                      {updateDeal.isPending ? <Loader2 className="animate-spin w-3.5 h-3.5 mr-2" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+                      Log payment
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground px-1">Save this record first to start logging additional payments against it.</p>
+              )}
             </div>
-            
+
             <div className="flex justify-end pt-2">
               <Button type="button" variant="outline" className="h-10 px-6 rounded-lg bg-white border-border hover:bg-muted" onClick={() => setDealOpen(false)}>Close</Button>
             </div>
@@ -1138,6 +1327,7 @@ export function ClientDetailPage() {
               quotation={editingInvoice}
               clientName={client.name}
               initialLineItems={invoiceForm.line_items}
+              initialDueDate={invoiceForm.valid_until?.split("T")[0]}
               onSave={(payload, isNew) => {
                 if (!ws || !workspace?.userId) return;
                 const finalPayload = {

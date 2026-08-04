@@ -340,7 +340,9 @@ export function TasksPage() {
       if (isClient) {
         if (p.client_name?.toLowerCase() !== clientNameForFilter.toLowerCase()) return false;
       } else if (isSMM && selectedClientFilter === "All Clients") {
-        if (!clientNamesSet.has(p.client_name || "")) return false;
+        // SMMs see their own assigned clients' tasks, plus any client's task
+        // that's awaiting approval so any SMM can pick it up and approve it.
+        if (!clientNamesSet.has(p.client_name || "") && p.status !== "pending_approval") return false;
       } else if (selectedClientFilter !== "All Clients") {
         if (p.client_name !== selectedClientFilter) return false;
       }

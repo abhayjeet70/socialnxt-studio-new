@@ -14,6 +14,7 @@ import { Plus, Search, Filter, MoreHorizontal, Loader2, Check, Users, Pencil, Tr
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import { useCurrentWorkspace, useClients, useCreateClient, useUpdateClient, useDeleteClient, useWorkspaceMembers, useDeals, type Client } from "@/lib/queries";
 import { usePermissions } from "@/lib/permissions";
+import { getDealGrossAmount } from "@/lib/dealUtils";
 import { toast } from "sonner";
 
 const STATUS_TONE: Record<string, string> = {
@@ -226,9 +227,15 @@ export function ClientsPage() {
 
   const isEmployee = workspace?.role === "employee";
   const myUserId = workspace?.userId;
+  const isSMM = workspace?.role === "employee" && workspace?.agencyRole === "Social Media Manager";
 
-  const accessibleClients = isEmployee && !hasPermission("view_clients")
-    ? clients.filter(c => Object.values(c.team_assignments || {}).includes(myUserId!))
+  // SMMs only see clients they're the assigned Account/Social Media Manager for,
+  // regardless of the "View all clients" permission toggle (matches the Content
+  // Sheet / Calendar scoping). Other employee roles still fall back to that permission.
+  const accessibleClients = isEmployee && (isSMM || !hasPermission("view_clients"))
+    ? clients.filter(c => isSMM
+        ? c.team_assignments?.["Account/Social Media Manager"] === myUserId
+        : Object.values(c.team_assignments || {}).includes(myUserId!))
     : clients;
 
   const filteredClients = accessibleClients.filter(c => {
@@ -260,7 +267,7 @@ export function ClientsPage() {
 
   const getClientFinancials = (clientName: string) => {
     const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === clientName.toLowerCase());
-    const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0);
+    const totalRevenue = clientDeals.reduce((sum, d) => sum + getDealGrossAmount(d), 0);
     const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
     const pendingPayment = totalRevenue - advancePaid;
     return { totalRevenue, advancePaid, pendingPayment };
@@ -731,7 +738,7 @@ export function ClientsPage() {
             <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
               <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><FileText className="w-3 h-3" /> Total Revenue</p>
               <p className="text-2xl font-bold text-primary flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
-                {deals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                {deals.reduce((sum, d) => sum + getDealGrossAmount(d), 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
               </p>
             </div>
             <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
@@ -743,7 +750,7 @@ export function ClientsPage() {
             <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
               <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><AlertOctagon className="w-3 h-3 text-amber-500" /> Pending</p>
               <p className="text-2xl font-bold text-amber-600 flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
-                {(deals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0) - deals.reduce((sum, d) => sum + (d.advance_paid || 0), 0)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                {(deals.reduce((sum, d) => sum + getDealGrossAmount(d), 0) - deals.reduce((sum, d) => sum + (d.advance_paid || 0), 0)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
               </p>
             </div>
           </>
@@ -823,7 +830,7 @@ export function ClientsPage() {
               <>
                 {sortedClients.map((c) => {
                   const clientDeals = deals.filter(d => d.client_name?.toLowerCase() === c.name.toLowerCase());
-                  const totalRevenue = clientDeals.reduce((sum, d) => sum + (d.amount || 0) * 1.18, 0);
+                  const totalRevenue = clientDeals.reduce((sum, d) => sum + getDealGrossAmount(d), 0);
                   const advancePaid = clientDeals.reduce((sum, d) => sum + (d.advance_paid || 0), 0);
                   const pendingPayment = totalRevenue - advancePaid;
                   // Simple two-status rule: Closed or Inactive = inactive; everything else = active

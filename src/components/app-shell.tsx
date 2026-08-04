@@ -37,6 +37,7 @@ const NAV: { to: string; label: string; icon: typeof LayoutDashboard; exact?: bo
   { to: "/clients", label: "Client Management", icon: Users, exact: true },
   { to: "/calendar", label: "Content Calendar", icon: Calendar },
   { to: "/tasks", label: "Content Sheet", icon: ListTodo },
+  { to: "/approvals", label: "Approvals", icon: CheckCircle2 },
   { to: "/media", label: "Media Library", icon: Images },
   { to: "/team", label: "Team", icon: Users2 },
   { to: "/meetings", label: "Meetings", icon: Video },
@@ -70,6 +71,9 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
     if (item.to === "/proposals") return hasPermission("access_proposals");
     if (item.to === "/quotations") return hasPermission("access_quotations");
     if (item.to === "/deals") return hasPermission("access_deals");
+    if (item.to === "/approvals") {
+      return role === "admin" || (role === "employee" && workspace?.agencyRole === "Social Media Manager");
+    }
 
     if (role === "client") {
       return ["/", "/calendar", "/tasks", "/media", "/meetings", "/issues", "/activity-logs", "/proposals", "/quotations"].includes(item.to);
@@ -94,7 +98,7 @@ function SidebarContent({ workspace, pathname, onNavClick }: {
       </Link>
 
       {/* Nav links */}
-      <nav className="px-3 pb-6 flex-1 overflow-y-auto scrollbar-hide">
+      <nav className="px-3 pb-6 flex-1 overflow-y-auto scrollbar-sleek">
         <div className="px-3 pt-4 pb-2 text-[11px] uppercase tracking-wider text-sidebar-muted">Workspace</div>
         {visibleNav.map((item) => {
           const active = item.exact ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + "/");

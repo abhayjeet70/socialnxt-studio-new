@@ -13,6 +13,7 @@ import {
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
+import { webnxtBase } from "@/lib/invoiceUtils";
 import {
   useCurrentWorkspace, useQuotations, useCreateQuotation, useUpdateQuotation,
   useUpdateQuotationStatus, useDeleteQuotation, useClients,
@@ -568,10 +569,11 @@ export function QuotationsPage() {
               <X className="h-5 w-5 text-muted-foreground" />
             </button>
           </div>
-          {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto">
+          {/* Two-column body: form (left) + live preview (right), filling the window below the header */}
+          <div className="flex-1 min-h-0 flex flex-col xl:flex-row overflow-hidden">
+          <div className="w-full xl:w-[620px] shrink-0 overflow-y-auto border-r border-gray-200 bg-[#FAF9F6]">
 
-          <div className="p-6 space-y-6 flex-1 text-sm">
+          <div className="p-6 space-y-6 text-sm">
             {/* Top Info */}
             <div className="space-y-4">
               <div className="space-y-1">
@@ -779,21 +781,6 @@ export function QuotationsPage() {
               </div>
             </div>
 
-            {/* LIVE PREVIEW EMBED */}
-            <div className="pt-6">
-              <div className="text-center bg-gray-200/60 text-gray-500 text-[10px] font-bold py-2.5 uppercase tracking-widest rounded-t-xl border border-b-0 border-gray-300">
-                Live Preview — Exact PDF Layout
-              </div>
-              <div className="border border-gray-300 rounded-b-xl bg-gray-100 p-2 sm:p-4 overflow-hidden flex justify-center">
-                <div className="w-full max-w-[400px] h-[500px] bg-white rounded-lg shadow-sm border border-gray-200 overflow-y-auto">
-                  {/* We render QuotationPreview inside, but we must pass a prop or use CSS to scale it if needed. For now, it will just scroll. */}
-                  <div className="origin-top scale-[0.8] w-[125%] h-[125%]">
-                     <QuotationPreview quotation={livePreviewMock} onClose={() => {}} embedded />
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* TOTALS CARD */}
             <div className="bg-[#1C2331] text-white rounded-2xl p-5 space-y-3 shadow-lg">
               <h4 className="text-[10px] font-bold text-blue-300/80 uppercase tracking-widest mb-3">Auto-Calculated Totals</h4>
@@ -845,6 +832,20 @@ export function QuotationsPage() {
 
           </div>
           </div>
+
+          {/* Live preview panel — fills all remaining width/height, no scaling hacks */}
+          <div className="flex-1 min-w-0 overflow-y-auto bg-gray-100">
+            <div className="p-4 xl:p-8">
+              <div className="text-center text-gray-500 text-[11px] font-bold py-2.5 uppercase tracking-widest mb-3">
+                Live Preview — Exact PDF Layout
+              </div>
+              <div className="max-w-[680px] mx-auto bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <QuotationPreview quotation={livePreviewMock} onClose={() => {}} embedded />
+              </div>
+            </div>
+          </div>
+
+          </div>
         </div>
       )}
 
@@ -861,6 +862,22 @@ function QuotationPreview({ quotation: q, onClose, embedded }: { quotation: Quot
   const sub = subtotal(q.line_items);
   const taxAmt = (sub * q.tax_rate) / 100;
   const total = sub + taxAmt;
+
+  // Reuse the same company logo uploaded in Settings for invoices, so
+  // quotations don't show the placeholder Socialnxt icon instead.
+  const { data: workspace } = useCurrentWorkspace();
+  const companyLogo = (() => {
+    if (workspace?.workspaceId) {
+      const local = localStorage.getItem(`invoiceSettings_${workspace.workspaceId}`);
+      if (local) {
+        try {
+          const parsed = JSON.parse(local);
+          if (parsed.companyLogo) return parsed.companyLogo;
+        } catch (e) {}
+      }
+    }
+    return workspace?.invoiceSettings?.companyLogo || webnxtBase.companyLogo || logo;
+  })();
 
   // HSN summary: group by hsn_sac
   const hsnSummary = useMemo(() => {
@@ -923,7 +940,7 @@ function QuotationPreview({ quotation: q, onClose, embedded }: { quotation: Quot
   };
 
   const content = (
-    <div className={`bg-white flex flex-col ${embedded ? 'w-full h-full' : 'rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh]'}`} onClick={embedded ? undefined : (e) => e.stopPropagation()}>
+    <div className={`bg-white flex flex-col ${embedded ? 'w-full' : 'rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh]'}`} onClick={embedded ? undefined : (e) => e.stopPropagation()}>
       {/* Modal toolbar */}
       {!embedded && (
         <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
@@ -949,7 +966,7 @@ function QuotationPreview({ quotation: q, onClose, embedded }: { quotation: Quot
             <div className="flex items-start justify-between pb-4 border-b-2 border-gray-200">
               <div>
                 <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 inline-block mb-2 shadow-sm">
-                  <img src={logo} alt="Logo" style={{ height: "40px", width: "auto", objectFit: "contain", display: "block" }} />
+                  <img src={companyLogo} alt="Logo" style={{ height: "40px", width: "auto", objectFit: "contain", display: "block" }} />
                 </div>
                 {ef.company_tagline && (
                   <p className="text-[11px] text-gray-500 mt-1 italic">{ef.company_tagline}</p>

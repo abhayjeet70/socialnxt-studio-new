@@ -14,13 +14,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
-import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download } from "lucide-react";
+import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download, VideoIcon, PlayCircle } from "lucide-react";
 import { InstagramLogo, FacebookLogo, LinkedInLogo, TwitterLogo, TikTokLogo } from "@/components/social-icons";
 import { toast } from "sonner";
 
 function isImage(a: MediaAsset) {
   if (a.mime_type?.startsWith("image/")) return true;
   return /\.(jpe?g|gif|png|webp|svg|avif)$/i.test(a.url);
+}
+
+function isVideo(a: MediaAsset) {
+  if (a.mime_type?.startsWith("video/")) return true;
+  return /\.(mp4|mov|webm|avi|mkv|m4v)$/i.test(a.url);
 }
 
 const PlatformIcon = ({ platform, size = 14, className }: { platform: string, size?: number, className?: string }) => {
@@ -54,6 +59,7 @@ export function MediaPage() {
   const [q, setQ] = useState("");
   const [selectedClient, setSelectedClient] = useState<string>("all");
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<"all" | "image" | "video">("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -66,54 +72,62 @@ export function MediaPage() {
     setSelectedAssets(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
   };
 
-  const filtered = assets.filter(
-    (a) => {
-      if (workspace?.role === "client") {
-        const myClientId = clientsList.find(c => 
-          c.email?.toLowerCase() === workspace.userEmail?.toLowerCase() ||
-          c.name.toLowerCase() === workspace.userFullName?.toLowerCase() ||
-          workspace.userFullName?.toLowerCase().includes(c.name.toLowerCase()) ||
-          c.name.toLowerCase().includes(workspace.userFullName?.toLowerCase() || "")
-        )?.id;
-        const isMyUpload = a.uploaded_by === workspace.userId;
-        const isAssignedToMe = myClientId && a.client_id === myClientId;
-        if (!isMyUpload && !isAssignedToMe) return false;
-      } else if (workspace?.role === "employee") {
-        const client = clientsList.find(c => c.id === a.client_id);
-        const isAssigned = client && Object.values(client.team_assignments || {}).includes(workspace.userId);
-        if (!isAssigned && a.uploaded_by !== workspace.userId) return false;
-      }
-
-      const clientName = clientsList.find(c => c.id === a.client_id)?.name || "";
-      const matchSearch = !q ||
-        (a.file_name || "").toLowerCase().includes(q.toLowerCase()) ||
-        (a.tags || []).some((t) => t.toLowerCase().includes(q.toLowerCase())) ||
-        clientName.toLowerCase().includes(q.toLowerCase());
-      
-      const matchClient = selectedClient === "all" || a.client_id === selectedClient;
-      const matchPlatform = filterPlatform === "all" || (a.platform || "").split(",").includes(filterPlatform);
-      
-      let matchDate = true;
-      if (dateFilter !== "all" && a.created_at) {
-        const assetDate = new Date(a.created_at);
-        const now = new Date();
-        if (dateFilter === "today") {
-          matchDate = assetDate.toDateString() === now.toDateString();
-        } else if (dateFilter === "week") {
-          const lastWeek = new Date();
-          lastWeek.setDate(now.getDate() - 7);
-          matchDate = assetDate >= lastWeek;
-        } else if (dateFilter === "month") {
-          const lastMonth = new Date();
-          lastMonth.setDate(now.getDate() - 30);
-          matchDate = assetDate >= lastMonth;
-        } else if (dateFilter === "custom" && customStart && customEnd) {
-          matchDate = assetDate >= new Date(customStart) && assetDate <= new Date(customEnd + "T23:59:59");
-        }
-      }
-      
-      return matchSearch && matchClient && matchPlatform && matchDate;
+  const matchesBaseFilters = (a: MediaAsset) => {
+    if (workspace?.role === "client") {
+      const myClientId = clientsList.find(c =>
+        c.email?.toLowerCase() === workspace.userEmail?.toLowerCase() ||
+        c.name.toLowerCase() === workspace.userFullName?.toLowerCase() ||
+        workspace.userFullName?.toLowerCase().includes(c.name.toLowerCase()) ||
+        c.name.toLowerCase().includes(workspace.userFullName?.toLowerCase() || "")
+      )?.id;
+      const isMyUpload = a.uploaded_by === workspace.userId;
+      const isAssignedToMe = myClientId && a.client_id === myClientId;
+      if (!isMyUpload && !isAssignedToMe) return false;
+    } else if (workspace?.role === "employee") {
+      const client = clientsList.find(c => c.id === a.client_id);
+      const isAssigned = client && Object.values(client.team_assignments || {}).includes(workspace.userId);
+      if (!isAssigned && a.uploaded_by !== workspace.userId) return false;
     }
+
+    const clientName = clientsList.find(c => c.id === a.client_id)?.name || "";
+    const matchSearch = !q ||
+      (a.file_name || "").toLowerCase().includes(q.toLowerCase()) ||
+      (a.tags || []).some((t) => t.toLowerCase().includes(q.toLowerCase())) ||
+      clientName.toLowerCase().includes(q.toLowerCase());
+
+    const matchClient = selectedClient === "all" || a.client_id === selectedClient;
+    const matchPlatform = filterPlatform === "all" || (a.platform || "").split(",").includes(filterPlatform);
+
+    let matchDate = true;
+    if (dateFilter !== "all" && a.created_at) {
+      const assetDate = new Date(a.created_at);
+      const now = new Date();
+      if (dateFilter === "today") {
+        matchDate = assetDate.toDateString() === now.toDateString();
+      } else if (dateFilter === "week") {
+        const lastWeek = new Date();
+        lastWeek.setDate(now.getDate() - 7);
+        matchDate = assetDate >= lastWeek;
+      } else if (dateFilter === "month") {
+        const lastMonth = new Date();
+        lastMonth.setDate(now.getDate() - 30);
+        matchDate = assetDate >= lastMonth;
+      } else if (dateFilter === "custom" && customStart && customEnd) {
+        matchDate = assetDate >= new Date(customStart) && assetDate <= new Date(customEnd + "T23:59:59");
+      }
+    }
+
+    return matchSearch && matchClient && matchPlatform && matchDate;
+  };
+
+  // Base set (everything except the photo/video type toggle) so the tab counts
+  // reflect the other active filters (client, search, date, platform).
+  const baseFiltered = assets.filter(matchesBaseFilters);
+  const photoCount = baseFiltered.filter(isImage).length;
+  const videoCount = baseFiltered.filter(isVideo).length;
+
+  const filtered = baseFiltered.filter((a) =>
+    mediaTypeFilter === "all" || (mediaTypeFilter === "video" ? isVideo(a) : isImage(a))
   );
 
   const uploadableClients = workspace?.role === "employee"
@@ -276,7 +290,28 @@ export function MediaPage() {
                 ))}
               </select>
             )}
-            
+
+            <div className="flex items-center gap-1 bg-white border border-input rounded-xl p-1 h-10">
+              {([
+                { key: "all", label: "All", count: baseFiltered.length },
+                { key: "image", label: "Photos", count: photoCount, icon: ImageIcon },
+                { key: "video", label: "Videos", count: videoCount, icon: VideoIcon },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setMediaTypeFilter(tab.key)}
+                  className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                    mediaTypeFilter === tab.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {"icon" in tab && tab.icon ? <tab.icon className="h-3.5 w-3.5" /> : null}
+                  {tab.label}
+                  <span className={mediaTypeFilter === tab.key ? "opacity-80" : "opacity-60"}>({tab.count})</span>
+                </button>
+              ))}
+            </div>
+
             {isSelectionMode ? (
               <div className="flex items-center gap-2 bg-primary/10 px-3 py-1.5 rounded-xl border border-primary/20 mt-2 sm:mt-0">
                 <span className="text-sm font-semibold text-primary mr-2 hidden sm:inline">{selectedAssets.length} selected</span>
@@ -366,6 +401,16 @@ export function MediaPage() {
                 {isImage(a) ? (
                   <a href={a.url} target="_blank" rel="noreferrer" className="w-full h-full">
                     <img src={a.url} alt={a.file_name || "asset"} className="w-full h-full object-cover" />
+                  </a>
+                ) : isVideo(a) ? (
+                  <a href={a.url} target="_blank" rel="noreferrer" className="w-full h-full relative block">
+                    <video src={a.url} className="w-full h-full object-cover" preload="metadata" muted playsInline />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                      <PlayCircle className="h-9 w-9 text-white drop-shadow" />
+                    </div>
+                    <span className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                      <VideoIcon className="h-2.5 w-2.5" /> Video
+                    </span>
                   </a>
                 ) : (
                   <a href={a.url} target="_blank" rel="noreferrer" className="flex flex-col items-center text-muted-foreground">
