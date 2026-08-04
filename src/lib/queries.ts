@@ -54,6 +54,7 @@ export type Meeting = {
   scheduled_at: string;
   created_by: string;
   created_at: string;
+  updated_at?: string | null;
   participant_type?: string;
   participant_ids?: string[];
   users?: Partial<User>; // author info via join
@@ -538,7 +539,7 @@ export function useUpdateMeeting() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, updates, workspace_id }: { id: string; updates: Partial<Meeting>; workspace_id: string }) => {
-      const { data, error } = await supabase.from("meetings").update(updates).eq("id", id).select().single();
+      const { data, error } = await supabase.from("meetings").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", id).select().single();
       if (error) throw error;
       return data;
     },

@@ -697,13 +697,13 @@ export function ClientDetailPage() {
         {/* Revenue */}
         {workspace?.role !== "employee" && (
           <>
-            <div 
-              onClick={openEdit}
+            <div
+              onClick={() => setActiveTab("Revenue")}
+              title="View revenue details"
               className="rounded-2xl border border-border bg-white p-4 shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all group relative"
             >
               <div className="flex justify-between items-start mb-2">
                 <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Total Revenue</p>
-                <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity absolute top-4 right-4" />
               </div>
               <p className="text-sm font-bold text-primary">₹{totalRevenue.toLocaleString("en-IN")}</p>
               <p className="text-[11px] text-muted-foreground mt-1">paid to date</p>

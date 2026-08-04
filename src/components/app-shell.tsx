@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
-import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useWorkspaceMembers, useIssues, useQuotations } from "@/lib/queries";
+import { useCurrentWorkspace, useUpdateProfile, useClients, usePosts, useWorkspaceMembers, useIssues, useQuotations, useMeetings } from "@/lib/queries";
 import { usePermissions } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -163,6 +163,7 @@ export function AppShell({ children, title, subtitle, actions }: {
   const { data: issues = [] } = useIssues(workspace?.workspaceId);
   const { data: allQuotations = [] } = useQuotations(workspace?.workspaceId);
   const invoices = allQuotations.filter(q => q.quotation_number?.startsWith("INV-"));
+  const { data: meetings = [] } = useMeetings(workspace?.workspaceId);
 
   const query = globalSearch.toLowerCase();
   
@@ -234,7 +235,25 @@ export function AppShell({ children, title, subtitle, actions }: {
       color: "bg-amber-100 text-amber-700",
       icon: Receipt,
       link: "/clients",
-    }))
+    })),
+    ...meetings.slice(0, 5).map(m => ({
+      ts: m.created_at,
+      who: m.users?.full_name || m.users?.email || "Someone",
+      action: "scheduled a meeting",
+      subject: m.agenda || "Untitled meeting",
+      color: "bg-cyan-100 text-cyan-700",
+      icon: Video,
+      link: "/meetings",
+    })),
+    ...meetings.filter(m => m.updated_at && m.updated_at !== m.created_at).slice(0, 5).map(m => ({
+      ts: m.updated_at!,
+      who: m.users?.full_name || m.users?.email || "Someone",
+      action: "updated a meeting",
+      subject: m.agenda || "Untitled meeting",
+      color: "bg-cyan-100 text-cyan-700",
+      icon: Video,
+      link: "/meetings",
+    })),
   ]
     .sort((a, b) => new Date(b.ts ?? 0).getTime() - new Date(a.ts ?? 0).getTime())
     .slice(0, 10);
