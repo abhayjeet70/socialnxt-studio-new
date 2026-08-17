@@ -1,0 +1,37 @@
+# Deploy SocialNxt to Hostinger (static)
+
+SocialNxt is now a plain Vite + React + React Router single-page app. There is no
+Node server to run — you just upload the static `dist/` output.
+
+## 0. Build
+```bash
+npm install
+npm run build:hostinger
+```
+This produces a `dist/` folder containing `index.html`, `assets/`, and `.htaccess`.
+
+## 1. Upload the build
+1. In Hostinger File Manager, open `public_html`
+2. Delete old files inside `public_html` (keep folders like `cgi-bin` if present)
+3. Upload **all** contents of the `dist/` folder so that `index.html` and `.htaccess`
+   sit directly in `public_html` (not inside a nested `dist/` folder). Enable
+   "show hidden files" so `.htaccess` is uploaded — it powers deep-link routing.
+
+## 2. Deploy the team admin Edge Function (required for Add Member)
+Without this, login + CRM work, but creating team members fails.
+
+```bash
+npx supabase login
+npx supabase functions deploy admin-users --project-ref ilwkuoumjsbqlzmskgnz
+```
+
+## 3. Supabase Auth settings
+In Supabase Dashboard → Authentication → URL Configuration:
+- Site URL: `https://YOUR-DOMAIN.com`
+- Redirect URLs: add `https://YOUR-DOMAIN.com/**` and `https://YOUR-DOMAIN.com/login`
+
+## 4. Rebuild later
+```bash
+npm run build:hostinger
+```
+Then re-upload the new `dist` / zip.
