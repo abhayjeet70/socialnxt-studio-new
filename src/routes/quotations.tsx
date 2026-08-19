@@ -142,38 +142,46 @@ export function QuotationsPage() {
   const [preview, setPreview] = useState<Quotation | null>(null);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
 
-  const defaultForm = () => ({
-    // Quotation number
-    quotation_number: "",
-    // Client
-    client_name: "",
-    client_gstin: "",
-    place_of_supply: "",
-    // Details
-    source: "",
-    reference_no: "",
-    issue_date: new Date().toISOString().slice(0, 10),
-    valid_until: "",
-    service_type: null as string | null,
-    transaction_type: null as string | null,
-    // Assignment
-    assigned_to: null as string | null,
-    notify_admin: false,
-    // Line items
-    line_items: [{ ...EMPTY_LINE }] as LineItem[],
-    tax_rate: 18,
-    notes: "",
-    status: "Draft" as Quotation["status"],
-    // Payment
-    upi_id: "",
-    payment_phone: "",
-    // Company
-    company_address: "3467-E Sudama Nagar Indore, Indore 452009, Madhya Pradesh MP, India",
-    company_gstin: "",
-    company_tagline: "Transform your Brand with Digital Excellence",
-    company_email: "support@webnxt.co",
-    company_website: "http://www.webnxt.co",
-  });
+  const defaultForm = () => {
+    // Pre-fill company GST/address/place-of-supply from Settings → Invoice Settings, so users
+    // don't have to re-type it on every new quotation (falls back to the old hardcoded demo
+    // values only when Settings hasn't been filled in yet).
+    const inv = workspace?.invoiceSettings || {};
+    const addressParts = [inv.companyAddressLine1, inv.companyAddressLine2, inv.companyAddressLine3].filter(Boolean);
+
+    return {
+      // Quotation number
+      quotation_number: "",
+      // Client
+      client_name: "",
+      client_gstin: "",
+      place_of_supply: inv.companyPlaceOfSupply || "",
+      // Details
+      source: "",
+      reference_no: "",
+      issue_date: new Date().toISOString().slice(0, 10),
+      valid_until: "",
+      service_type: null as string | null,
+      transaction_type: null as string | null,
+      // Assignment
+      assigned_to: null as string | null,
+      notify_admin: false,
+      // Line items
+      line_items: [{ ...EMPTY_LINE }] as LineItem[],
+      tax_rate: 18,
+      notes: "",
+      status: "Draft" as Quotation["status"],
+      // Payment
+      upi_id: "",
+      payment_phone: "",
+      // Company
+      company_address: addressParts.length > 0 ? addressParts.join(", ") : "3467-E Sudama Nagar Indore, Indore 452009, Madhya Pradesh MP, India",
+      company_gstin: inv.companyGstin || "",
+      company_tagline: inv.companyTagline || "Transform your Brand with Digital Excellence",
+      company_email: inv.footerEmail || "support@webnxt.co",
+      company_website: inv.footerWebsite || "http://www.webnxt.co",
+    };
+  };
 
   const [form, setForm] = useState(defaultForm());
 

@@ -9,12 +9,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useCurrentWorkspace, useClients, usePosts, useIssues,
-  useClientSocials, useAddClientSocial, useDeleteClientSocial, useUpdateClientSocial, useUpdatePostStatus, useDeals, useWorkspaceMembers, useUpdateClient,
+  useClientSocials, useAddClientSocial, useDeleteClientSocial, useUpdateClientSocial, useUpdatePostStatus, useUpdatePostDetails, useDeals, useWorkspaceMembers, useUpdateClient,
   useCreateDeal, useUpdateDeal, useDeleteDeal,
-  useQuotations, useCreateQuotation, useUpdateQuotation, useDeleteQuotation, type Quotation, type DealPayment
+  useQuotations, useCreateQuotation, useUpdateQuotation, useDeleteQuotation, type Quotation, type DealPayment, type Post
 } from "@/lib/queries";
 
 import { InvoiceAdapter } from "@/components/invoices/InvoiceAdapter";
+import { useDraftPersist } from "@/hooks/use-draft-persist";
 import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import { getDealGrossAmount, getDealGstRate } from "@/lib/dealUtils";
 import {
@@ -141,6 +142,7 @@ export function ClientDetailPage() {
   const updateSocial = useUpdateClientSocial();
   const delSocial = useDeleteClientSocial();
   const updateStatus = useUpdatePostStatus();
+  const updatePostDetails = useUpdatePostDetails();
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingSocialId, setEditingSocialId] = useState<string | null>(null);
@@ -148,6 +150,14 @@ export function ClientDetailPage() {
   const [sUrl, setSUrl] = useState("");
   const [sSecret, setSSecret] = useState("");
   const [sLabel, setSLabel] = useState("");
+
+  // Draft persistence excludes sSecret (a password) — don't leave credentials sitting in sessionStorage.
+  const { clearDraft: clearSocialDraft } = useDraftPersist(
+    `draft:social-handle:${client?.id || "new"}:${editingSocialId || "new"}`,
+    addOpen,
+    { sPlatform, sUrl, sLabel },
+    (v) => { setSPlatform(v.sPlatform); setSUrl(v.sUrl); setSLabel(v.sLabel); },
+  );
 
   const updateClient = useUpdateClient();
   const createDeal = useCreateDeal();
@@ -328,6 +338,7 @@ export function ClientDetailPage() {
           onSuccess: () => {
             toast.success("Handle updated");
             setAddOpen(false); setSUrl(""); setSSecret(""); setSLabel(""); setEditingSocialId(null);
+            clearSocialDraft();
           },
           onError: (e: any) => toast.error(e.message),
         }
@@ -339,6 +350,7 @@ export function ClientDetailPage() {
           onSuccess: () => {
             toast.success("Handle added");
             setAddOpen(false); setSUrl(""); setSSecret(""); setSLabel("");
+            clearSocialDraft();
           },
           onError: (e: any) => toast.error(e.message),
         }
@@ -348,10 +360,54 @@ export function ClientDetailPage() {
 
   const completeTask = (id: string) => {
     if (!ws) return;
-    updateStatus.mutate({ id, status: "published", workspace_id: ws }, {
+    updateStatus.mutate({ id, status: "published", workspace_id: ws, changed_by: workspace?.userId }, {
       onSuccess: () => toast.success("Task marked complete ✓"),
       onError: (e: any) => toast.error(e.message),
     });
+  };
+
+  // ── Task edit dialog state ──
+  const [taskEditOpen, setTaskEditOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Post | null>(null);
+  const [editTaskTopic, setEditTaskTopic] = useState("");
+  const [editTaskContentType, setEditTaskContentType] = useState("");
+  const [editTaskPlatforms, setEditTaskPlatforms] = useState<string[]>([]);
+  const [editTaskScheduledFor, setEditTaskScheduledFor] = useState("");
+
+  const openTaskEdit = (t: Post) => {
+    setEditingTask(t);
+    setEditTaskTopic(t.topic || "");
+    setEditTaskContentType(t.content_type || "");
+    setEditTaskPlatforms(t.platforms || (t.platform ? [t.platform] : []));
+    setEditTaskScheduledFor(t.scheduled_for ? t.scheduled_for.slice(0, 10) : "");
+    setTaskEditOpen(true);
+  };
+
+  const toggleEditTaskPlatform = (p: string) => {
+    setEditTaskPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+  };
+
+  const handleSaveTaskEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    updatePostDetails.mutate(
+      {
+        id: editingTask.id,
+        updates: {
+          topic: editTaskTopic || null,
+          content_type: editTaskContentType || null,
+          platforms: editTaskPlatforms,
+          scheduled_for: editTaskScheduledFor || null,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success("Task updated");
+          setTaskEditOpen(false);
+          setEditingTask(null);
+        },
+      },
+    );
   };
 
   const openEdit = () => {
@@ -856,10 +912,14 @@ export function ClientDetailPage() {
                         <div className="text-xs text-muted-foreground truncate">{s.handle || s.username || s.profile_url || "No profile URL set"}</div>
                       </div>
                       {s.profile_url && (
-                        <a href={s.profile_url} target="_blank" rel="noreferrer" className="h-8 w-8 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground" title="Open profile"><ExternalLink className="h-4 w-4" /></a>
+                        <a href={s.profile_url} target="_blank" rel="noreferrer" title="Open the actual profile page">
+                          <Button size="sm" variant="outline" className="h-8 rounded-lg text-primary border-primary/20 hover:bg-primary/10">
+                            <ExternalLink className="h-3.5 w-3.5 mr-1" /> View Profile
+                          </Button>
+                        </a>
                       )}
-                      <Button size="sm" className="h-8 rounded-lg" onClick={() => handleLogin(s)}>
-                        <LogIn className="h-3.5 w-3.5 mr-1" /> Login
+                      <Button size="sm" variant="outline" className="h-8 rounded-lg text-muted-foreground" onClick={() => handleLogin(s)} title="Copies the saved password and opens the platform's login page — paste the password there">
+                        <LogIn className="h-3.5 w-3.5 mr-1" /> Copy &amp; Login
                       </Button>
                       {isStaff && (
                         <div className="flex items-center">
@@ -903,6 +963,9 @@ export function ClientDetailPage() {
                               <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Complete
                             </Button>
                           )
+                        )}
+                        {isStaff && (
+                          <button onClick={() => openTaskEdit(t)} className="h-8 w-8 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground" title="Edit task"><Pencil className="h-4 w-4" /></button>
                         )}
                       </div>
                     );
@@ -1170,6 +1233,51 @@ export function ClientDetailPage() {
       </Dialog>
 
       {/* Add/Edit Deal Dialog */}
+      <Dialog open={taskEditOpen} onOpenChange={setTaskEditOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+          </DialogHeader>
+          <form id="task-edit-form" onSubmit={handleSaveTaskEdit} className="space-y-4 pt-1">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground uppercase">Topic</Label>
+              <Input value={editTaskTopic} onChange={(e) => setEditTaskTopic(e.target.value)} placeholder="e.g., Diwali campaign teaser" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground uppercase">Content Type</Label>
+              <Input value={editTaskContentType} onChange={(e) => setEditTaskContentType(e.target.value)} placeholder="e.g., Reel, Carousel, Story" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground uppercase">Platforms</Label>
+              <div className="flex flex-wrap gap-2">
+                {PLATFORMS.map((p) => (
+                  <Button
+                    key={p}
+                    type="button"
+                    variant={editTaskPlatforms.includes(p) ? "default" : "outline"}
+                    className={`h-8 px-3 rounded-full text-xs font-semibold ${editTaskPlatforms.includes(p) ? "bg-primary/10 text-primary border-primary hover:bg-primary/20" : "text-muted-foreground"}`}
+                    onClick={() => toggleEditTaskPlatform(p)}
+                  >
+                    {p}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground uppercase">Scheduled For</Label>
+              <Input type="date" value={editTaskScheduledFor} onChange={(e) => setEditTaskScheduledFor(e.target.value)} />
+            </div>
+          </form>
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => setTaskEditOpen(false)} disabled={updatePostDetails.isPending}>Cancel</Button>
+            <Button type="submit" form="task-edit-form" disabled={updatePostDetails.isPending}>
+              {updatePostDetails.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={dealOpen} onOpenChange={setDealOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 gap-0 overflow-y-auto max-h-[90vh] bg-[#FAF9F6]">
           <DialogHeader className="px-6 py-4 border-b bg-white">

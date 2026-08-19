@@ -84,6 +84,7 @@ export function ApprovalsPage() {
         workspace_id: workspace.workspaceId,
         approved_by: workspace.userFullName || workspace.userEmail?.split("@")[0] || "Unknown",
         approved_at: new Date().toISOString(),
+        changed_by: workspace.userId,
       },
       {
         onSuccess: () => {
@@ -98,7 +99,15 @@ export function ApprovalsPage() {
     const note = window.prompt("What needs to change? (this note is shown to the team)");
     if (note === null) return;
     updatePost.mutate(
-      { id: post.id, updates: { status: "changes_requested", revision_note: note } },
+      {
+        id: post.id,
+        updates: {
+          status: "changes_requested",
+          revision_note: note,
+          status_changed_by: workspace?.userId,
+          status_changed_at: new Date().toISOString(),
+        },
+      },
       { onSuccess: () => toast.success("Changes requested") },
     );
   };

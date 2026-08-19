@@ -1312,7 +1312,7 @@ function TaskRow({ post, index, isClient, allClientNames,
               if (!workspace || newStatus === post.status) return;
 
               if (post.status === "draft" && newStatus === "pending_approval" && canSubmitDraft) {
-                updateStatus.mutate({ id: post.id, status: "pending_approval", workspace_id: workspace.workspaceId });
+                updateStatus.mutate({ id: post.id, status: "pending_approval", workspace_id: workspace.workspaceId, changed_by: workspace.userId });
                 return;
               }
               if (post.status === "pending_approval" && newStatus === "approved" && canApprovePending) {
@@ -1322,19 +1322,19 @@ function TaskRow({ post, index, isClient, allClientNames,
               if (post.status === "pending_approval" && newStatus === "changes_requested" && canApprovePending) {
                 const note = window.prompt("What needs to change? (this note is shown to the team)");
                 if (note === null) return;
-                updatePost.mutate({ id: post.id, updates: { status: "changes_requested", revision_note: note } });
+                updatePost.mutate({ id: post.id, updates: { status: "changes_requested", revision_note: note, status_changed_by: workspace.userId, status_changed_at: new Date().toISOString() } });
                 return;
               }
               if (post.status === "changes_requested" && newStatus === "pending_approval" && canSubmitDraft) {
-                updatePost.mutate({ id: post.id, updates: { status: "pending_approval", revision_note: null } });
+                updatePost.mutate({ id: post.id, updates: { status: "pending_approval", revision_note: null, status_changed_by: workspace.userId, status_changed_at: new Date().toISOString() } });
                 return;
               }
               if (post.status === "approved" && newStatus === "scheduled" && canScheduleApproved) {
-                updateStatus.mutate({ id: post.id, status: "scheduled", workspace_id: workspace.workspaceId });
+                updateStatus.mutate({ id: post.id, status: "scheduled", workspace_id: workspace.workspaceId, changed_by: workspace.userId });
                 return;
               }
               if ((post.status === "scheduled" || post.status === "approved") && newStatus === "published" && canPublish) {
-                updateStatus.mutate({ id: post.id, status: "published", workspace_id: workspace.workspaceId }, {
+                updateStatus.mutate({ id: post.id, status: "published", workspace_id: workspace.workspaceId, changed_by: workspace.userId }, {
                   onSuccess: () => toast.success("Task completed ✓"),
                 });
                 return;
@@ -1344,33 +1344,48 @@ function TaskRow({ post, index, isClient, allClientNames,
               const newIndex = STATUS_FLOW.indexOf(newStatus as (typeof STATUS_FLOW)[number]);
               if (canRevert && newIndex >= 0 && newIndex < effectiveIndex) {
                 if (!window.confirm(`Revert this task from "${STATUS_LABELS[post.status]}" back to "${STATUS_LABELS[newStatus]}"?`)) return;
-                updatePost.mutate({ id: post.id, updates: { status: newStatus as Post["status"], approved_by: null, approved_at: null, revision_note: null } });
+                updatePost.mutate({ id: post.id, updates: { status: newStatus as Post["status"], approved_by: null, approved_at: null, revision_note: null, status_changed_by: workspace.userId, status_changed_at: new Date().toISOString() } });
               }
             };
 
             const style = STATUS_STYLES[post.status] || STATUS_STYLES.draft;
 
+            const changedByMember = members.find((m) => m.user_id === post.status_changed_by);
+            const changedByName = changedByMember?.users?.full_name || changedByMember?.users?.email?.split("@")[0];
+            const statusChangeTooltip = post.status_changed_by
+              ? `Changed by: ${changedByName || "Unknown"}\nDate: ${post.status_changed_at ? new Date(post.status_changed_at).toLocaleString() : ""}`
+              : post.approved_by
+                ? `Approved By: ${post.approved_by}\nDate: ${post.approved_at ? new Date(post.approved_at).toLocaleString() : ""}`
+                : undefined;
+
             return (
-              <Select value={post.status} onValueChange={handleStatusChange} disabled={updateStatus.isPending || updatePost.isPending}>
-                <SelectTrigger
-                  className="h-7 text-[10px] px-2.5 rounded-full border-0 font-bold uppercase tracking-wider w-full justify-center gap-1 [&>svg]:opacity-60 [&>svg]:h-3 [&>svg]:w-3"
-                  style={{ backgroundColor: style.bg, color: style.fg }}
-                  title={post.approved_by ? `Approved By: ${post.approved_by}\nDate: ${post.approved_at ? new Date(post.approved_at).toLocaleString() : ""}` : undefined}
-                >
-                  <SelectValue>{STATUS_LABELS[post.status] || post.status.replace(/_/g, " ")}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {forwardOptions.map((s) => (
-                    <SelectItem key={s} value={s} className="text-xs">{STATUS_LABELS[s]}</SelectItem>
-                  ))}
-                  {revertOptions.length > 0 && forwardOptions.length > 0 && (
-                    <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">Revert to</div>
-                  )}
-                  {revertOptions.map((s) => (
-                    <SelectItem key={`revert-${s}`} value={s} className="text-xs text-muted-foreground">↩ {STATUS_LABELS[s]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <>
+                <Select value={post.status} onValueChange={handleStatusChange} disabled={updateStatus.isPending || updatePost.isPending}>
+                  <SelectTrigger
+                    className="h-7 text-[10px] px-2.5 rounded-full border-0 font-bold uppercase tracking-wider w-full justify-center gap-1 [&>svg]:opacity-60 [&>svg]:h-3 [&>svg]:w-3"
+                    style={{ backgroundColor: style.bg, color: style.fg }}
+                    title={statusChangeTooltip}
+                  >
+                    <SelectValue>{STATUS_LABELS[post.status] || post.status.replace(/_/g, " ")}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {forwardOptions.map((s) => (
+                      <SelectItem key={s} value={s} className="text-xs">{STATUS_LABELS[s]}</SelectItem>
+                    ))}
+                    {revertOptions.length > 0 && forwardOptions.length > 0 && (
+                      <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">Revert to</div>
+                    )}
+                    {revertOptions.map((s) => (
+                      <SelectItem key={`revert-${s}`} value={s} className="text-xs text-muted-foreground">↩ {STATUS_LABELS[s]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {changedByName && post.status_changed_at && (
+                  <div className="text-[9px] text-muted-foreground mt-1 text-center leading-tight" title={statusChangeTooltip}>
+                    by {changedByName} · {new Date(post.status_changed_at).toLocaleDateString()}
+                  </div>
+                )}
+              </>
             );
           })()}
 
@@ -1400,6 +1415,7 @@ function TaskRow({ post, index, isClient, allClientNames,
                 workspace_id: workspace.workspaceId,
                 approved_by: workspace.userFullName || workspace.userEmail?.split("@")[0] || "Unknown",
                 approved_at: new Date().toISOString(),
+                changed_by: workspace.userId,
               }, { onSuccess: () => setConfirmingApproval(false) });
             }}
           />
@@ -1440,7 +1456,7 @@ function TaskRow({ post, index, isClient, allClientNames,
             ref={fileInputRef}
             onChange={handleMediaUpload}
             className="hidden"
-            accept="image/*"
+            accept="image/*,video/*"
           />
           <AddLinkDialog
             open={addLinkTarget !== null}

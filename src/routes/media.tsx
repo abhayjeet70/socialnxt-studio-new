@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
-import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download, VideoIcon, PlayCircle, Link as LinkIcon } from "lucide-react";
+import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download, VideoIcon, PlayCircle, Link as LinkIcon, Pencil } from "lucide-react";
 import { InstagramLogo, FacebookLogo, LinkedInLogo, TwitterLogo, TikTokLogo } from "@/components/social-icons";
 import { toast } from "sonner";
 
@@ -69,6 +69,8 @@ export function MediaPage() {
   const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [editingLinkAsset, setEditingLinkAsset] = useState<MediaAsset | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const toggleSelection = (id: string) => {
     setSelectedAssets(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
@@ -227,6 +229,43 @@ export function MediaPage() {
       toast.success("Link added to Media Library!");
     } catch (err: any) {
       toast.error("Failed to add link: " + err.message);
+    }
+  };
+
+  const handleEditLink = async ({ name, url }: { name: string; url: string }) => {
+    if (!workspace || !editingLinkAsset) return;
+    try {
+      await updateAsset.mutateAsync({
+        id: editingLinkAsset.id,
+        workspace_id: workspace.workspaceId,
+        updates: { url, file_name: name || url },
+      });
+      toast.success("Link updated");
+    } catch (err: any) {
+      toast.error("Failed to update link: " + err.message);
+    } finally {
+      setEditingLinkAsset(null);
+    }
+  };
+
+  const downloadAsset = async (a: MediaAsset) => {
+    setDownloadingId(a.id);
+    try {
+      const response = await fetch(a.url);
+      if (!response.ok) throw new Error("Network response was not ok");
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = a.file_name || "asset";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+    } catch (err) {
+      toast.error(`Failed to download ${a.file_name || "asset"}`);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -490,6 +529,20 @@ export function MediaPage() {
                     {a.file_name || "asset"}
                   </span>
                   <div className="flex gap-1">
+                    {a.source_type === "link" ? (
+                      <button onClick={() => setEditingLinkAsset(a)} className="h-7 w-7 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground" title="Edit link">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    ) : (isImage(a) || isVideo(a)) && (
+                      <button
+                        onClick={() => downloadAsset(a)}
+                        disabled={downloadingId === a.id}
+                        className="h-7 w-7 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground"
+                        title="Download"
+                      >
+                        {downloadingId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
                     <button onClick={() => copyUrl(a.url)} className="h-7 w-7 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground">
                       <Copy className="h-3.5 w-3.5" />
                     </button>
@@ -619,6 +672,15 @@ export function MediaPage() {
         onOpenChange={setAddLinkOpen}
         onSubmit={handleAddLink}
         title="Add a link to the Media Library"
+      />
+      <AddLinkDialog
+        open={!!editingLinkAsset}
+        onOpenChange={(next) => !next && setEditingLinkAsset(null)}
+        onSubmit={handleEditLink}
+        title="Edit link"
+        initialName={editingLinkAsset?.file_name || ""}
+        initialUrl={editingLinkAsset?.url || ""}
+        submitLabel="Save changes"
       />
     </AppShell>
   );

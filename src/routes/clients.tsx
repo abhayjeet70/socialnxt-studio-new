@@ -15,6 +15,7 @@ import { PLATFORM_COLOR, PLATFORMS } from "@/lib/demo-data";
 import { useCurrentWorkspace, useClients, useCreateClient, useUpdateClient, useDeleteClient, useWorkspaceMembers, useDeals, type Client } from "@/lib/queries";
 import { usePermissions } from "@/lib/permissions";
 import { getDealGrossAmount } from "@/lib/dealUtils";
+import { useDraftPersist } from "@/hooks/use-draft-persist";
 import { toast } from "sonner";
 
 const STATUS_TONE: Record<string, string> = {
@@ -82,6 +83,16 @@ export function ClientsPage() {
   const [billingDate, setBillingDate] = useState<number | "">("");
   const [addManagerOpen, setAddManagerOpen] = useState<string | null>(null);
 
+  const { clearDraft: clearAddClientDraft } = useDraftPersist(
+    "draft:add-client",
+    isAddOpen,
+    { name, email, industry, status, selectedPlatforms, teamAssignments, billingDate },
+    (v) => {
+      setName(v.name); setEmail(v.email); setIndustry(v.industry); setStatus(v.status);
+      setSelectedPlatforms(v.selectedPlatforms); setTeamAssignments(v.teamAssignments); setBillingDate(v.billingDate);
+    },
+  );
+
   // ── Edit state ──
   const [editClient, setEditClient] = useState<Client | null>(null);
   const [editName, setEditName] = useState("");
@@ -143,6 +154,7 @@ export function ClientsPage() {
         toast.success("Client added successfully!");
         setIsAddOpen(false);
         setName(""); setEmail(""); setIndustry(""); setSelectedPlatforms([]); setStatus("Planning"); setTeamAssignments({}); setBillingDate("");
+        clearAddClientDraft();
       },
       onError: (err) => toast.error(err.message),
     });
@@ -273,6 +285,21 @@ export function ClientsPage() {
     const pendingPayment = totalRevenue - advancePaid;
     return { totalRevenue, advancePaid, pendingPayment };
   };
+
+  // ── Financial metric breakdown dialog (TC16) ──
+  const [financeBreakdown, setFinanceBreakdown] = useState<"totalRevenue" | "advancePaid" | "pendingPayment" | null>(null);
+  const FINANCE_METRIC_LABEL: Record<string, string> = {
+    totalRevenue: "Total Revenue",
+    advancePaid: "Advance Paid",
+    pendingPayment: "Pending",
+  };
+  const financeBreakdownRows = useMemo(() => {
+    if (!financeBreakdown) return [];
+    return accessibleClients
+      .map((c) => ({ client: c, ...getClientFinancials(c.name) }))
+      .filter((row) => row[financeBreakdown] !== 0)
+      .sort((a, b) => b[financeBreakdown] - a[financeBreakdown]);
+  }, [financeBreakdown, accessibleClients, deals]);
 
   const sortedClients = [...filteredClients].sort((a, b) => {
     switch (sortBy) {
@@ -699,6 +726,34 @@ export function ClientsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Financial Metric Breakdown Dialog (TC16) ── */}
+      <Dialog open={!!financeBreakdown} onOpenChange={(open) => !open && setFinanceBreakdown(null)}>
+        <DialogContent className="sm:max-w-[480px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{financeBreakdown ? FINANCE_METRIC_LABEL[financeBreakdown] : ""} — by client</DialogTitle>
+          </DialogHeader>
+          <div className="divide-y divide-border">
+            {financeBreakdownRows.length === 0 && (
+              <div className="py-8 text-center text-sm text-muted-foreground">No clients contribute to this metric.</div>
+            )}
+            {financeBreakdownRows.map((row) => (
+              <div key={row.client.id} className="flex items-center justify-between py-2.5">
+                <button
+                  className="text-sm font-medium text-foreground hover:text-primary hover:underline text-left"
+                  onClick={() => { setFinanceBreakdown(null); navigate(`/clients/${row.client.id}`); }}
+                >
+                  {row.client.name}
+                </button>
+                <span className="text-sm font-semibold flex items-center">
+                  <IndianRupee className="w-3.5 h-3.5 mr-0.5" />
+                  {financeBreakdown && row[financeBreakdown].toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Page header ── */}
       <div className="mb-6">
         <p className="text-[11px] font-bold tracking-widest text-primary uppercase mb-1">Delivery · Clients</p>
@@ -736,19 +791,28 @@ export function ClientsPage() {
         {/* Financials (Admin Only) */}
         {workspace?.role !== "employee" && (
           <>
-            <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
+            <div
+              onClick={() => setFinanceBreakdown("totalRevenue")}
+              className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
+            >
               <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><FileText className="w-3 h-3" /> Total Revenue</p>
               <p className="text-2xl font-bold text-primary flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
                 {deals.reduce((sum, d) => sum + getDealGrossAmount(d), 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
               </p>
             </div>
-            <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
+            <div
+              onClick={() => setFinanceBreakdown("advancePaid")}
+              className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
+            >
               <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Advance Paid</p>
               <p className="text-2xl font-bold text-foreground flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
                 {deals.reduce((sum, d) => sum + (d.advance_paid || 0), 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
               </p>
             </div>
-            <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border">
+            <div
+              onClick={() => setFinanceBreakdown("pendingPayment")}
+              className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-center border-border cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
+            >
               <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1"><AlertOctagon className="w-3 h-3 text-amber-500" /> Pending</p>
               <p className="text-2xl font-bold text-amber-600 flex items-center"><IndianRupee className="w-4 h-4 mr-0.5" />
                 {(deals.reduce((sum, d) => sum + getDealGrossAmount(d), 0) - deals.reduce((sum, d) => sum + (d.advance_paid || 0), 0)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}

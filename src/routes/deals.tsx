@@ -99,13 +99,13 @@ export function DealsPage() {
   const moveTo = (id: string, fromStatus: string, targetStatus: string) => {
     if (!workspace || fromStatus === targetStatus) return;
     updateStatus.mutate(
-      { id, status: targetStatus, workspace_id: workspace.workspaceId },
+      { id, status: targetStatus, workspace_id: workspace.workspaceId, changed_by: workspace.userId },
       {
         onSuccess: () => {
           toast.success(`Moved to ${STATUS_LABEL[targetStatus as Status] || targetStatus}`, {
             action: {
               label: "Undo",
-              onClick: () => updateStatus.mutate({ id, status: fromStatus, workspace_id: workspace.workspaceId }),
+              onClick: () => updateStatus.mutate({ id, status: fromStatus, workspace_id: workspace.workspaceId, changed_by: workspace.userId }),
             },
           });
         },

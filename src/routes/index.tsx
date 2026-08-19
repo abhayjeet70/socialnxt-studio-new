@@ -136,16 +136,30 @@ export function Dashboard() {
     return acc;
   }, {} as Record<string, typeof buckets[0]>);
 
+  // `payment_date` is a date-only column (no time-of-day). `new Date("2026-08-19")` parses it
+  // as UTC midnight, which JS then renders in the browser's local timezone — shifting it to
+  // e.g. 5:30 AM IST regardless of the real entry time. Parsing a bare "YYYY-MM-DD" as a local
+  // calendar date instead avoids that timezone shift for day/month bucketing.
+  const parseDateOnlyLocal = (dateStr: string): Date => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return new Date(dateStr);
+  };
+
   const getBucketKey = (dateStr: string) => {
-    const d = dateStr ? new Date(dateStr) : new Date();
+    const d = dateStr ? parseDateOnlyLocal(dateStr) : new Date();
     if (timeRange === "Today") return format(d, "ha");
     if (timeRange === "Last 7 Days" || timeRange === "Last 30 Days") return format(d, "yyyy-MM-dd");
     return format(d, "yyyy-MM");
   };
 
   deals.forEach((d: any) => {
-    const dateStr = d.payment_date || d.created_at || new Date().toISOString();
-    if (filterAfterDate && new Date(dateStr) < filterAfterDate) return;
+    // payment_date has no time-of-day at all, so it can never place a point correctly on the
+    // hourly "Today" axis — use the real entry timestamp (created_at) for that view instead.
+    const dateStr = timeRange === "Today"
+      ? (d.created_at || d.payment_date || new Date().toISOString())
+      : (d.payment_date || d.created_at || new Date().toISOString());
+    if (filterAfterDate && parseDateOnlyLocal(dateStr) < filterAfterDate) return;
     const key = getBucketKey(dateStr);
     if (timelineMap[key]) {
       const gross = getDealGrossAmount(d);

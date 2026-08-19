@@ -713,11 +713,22 @@ export function SettingsPage() {
 
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold text-muted-foreground uppercase">GSTIN *</Label>
-                  <Input 
-                    value={invoiceSettings.companyGstin || ''} 
-                    onChange={e => setInvoiceSettings({...invoiceSettings, companyGstin: e.target.value})} 
-                    className="h-9 bg-white" 
+                  <Input
+                    value={invoiceSettings.companyGstin || ''}
+                    onChange={e => setInvoiceSettings({...invoiceSettings, companyGstin: e.target.value})}
+                    className="h-9 bg-white"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Default Place of Supply</Label>
+                  <Input
+                    value={invoiceSettings.companyPlaceOfSupply || ''}
+                    onChange={e => setInvoiceSettings({...invoiceSettings, companyPlaceOfSupply: e.target.value})}
+                    placeholder="e.g. Madhya Pradesh"
+                    className="h-9 bg-white"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Pre-fills new quotations — still editable per quotation.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

@@ -65,7 +65,7 @@ export function ProposalsPage() {
 
   const [open, setOpen] = useState(false);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
-  const [form, setForm] = useState({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
+  const [form, setForm] = useState({ proposal_number: "", title: "", client_name: "", amount: "", notes: "", status: "Draft" });
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,9 +87,32 @@ export function ProposalsPage() {
     setPdfFile(file);
   };
 
+  // Suggests the next available "PQ_NN" number for the New Proposal form.
+  const getNextProposalNumber = () => {
+    const nums = proposals
+      .map(p => p.proposal_number || "")
+      .filter(n => n.startsWith("PQ_"))
+      .map(n => parseInt(n.replace("PQ_", ""), 10))
+      .filter(n => !isNaN(n));
+    const max = nums.length > 0 ? Math.max(...nums) : 0;
+    return `PQ_${String(max + 1).padStart(2, "0")}`;
+  };
+
   const handleSave = async () => {
     if (!form.title || !form.client_name || !form.amount) {
       toast.error("Please fill all required fields.");
+      return;
+    }
+    if (!form.proposal_number.trim()) {
+      toast.error("Please enter a proposal ID.");
+      return;
+    }
+    const trimmedNumber = form.proposal_number.trim();
+    const isDuplicate = proposals.some(
+      (p) => p.proposal_number === trimmedNumber && p.id !== editingProposal?.id
+    );
+    if (isDuplicate) {
+      toast.error(`Proposal ID "${trimmedNumber}" already exists. Please use a unique ID.`);
       return;
     }
     if (!workspace) return;
@@ -114,6 +137,7 @@ export function ProposalsPage() {
         {
           id: editingProposal.id,
           workspace_id: workspace.workspaceId,
+          proposal_number: trimmedNumber,
           title: form.title,
           client_name: form.client_name,
           amount: parseFloat(form.amount),
@@ -126,7 +150,7 @@ export function ProposalsPage() {
             toast.success("Proposal updated!");
             setOpen(false);
             setEditingProposal(null);
-            setForm({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
+            setForm({ proposal_number: "", title: "", client_name: "", amount: "", notes: "", status: "Draft" });
             setPdfFile(null);
           },
           onError: (e) => toast.error("Failed: " + e.message),
@@ -137,6 +161,7 @@ export function ProposalsPage() {
         {
           workspace_id: workspace.workspaceId,
           created_by: user.id,
+          proposal_number: trimmedNumber,
           title: form.title,
           client_name: form.client_name,
           amount: parseFloat(form.amount),
@@ -148,7 +173,7 @@ export function ProposalsPage() {
           onSuccess: () => {
             toast.success("Proposal created!");
             setOpen(false);
-            setForm({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
+            setForm({ proposal_number: "", title: "", client_name: "", amount: "", notes: "", status: "Draft" });
             setPdfFile(null);
           },
           onError: (e) => toast.error("Failed: " + e.message),
@@ -160,6 +185,7 @@ export function ProposalsPage() {
   const handleEdit = (p: Proposal) => {
     setEditingProposal(p);
     setForm({
+      proposal_number: p.proposal_number || "",
       title: p.title,
       client_name: p.client_name,
       amount: String(p.amount),
@@ -173,7 +199,7 @@ export function ProposalsPage() {
   const handleStatusChange = (proposal: Proposal, newStatus: string) => {
     if (!workspace) return;
     updateStatus.mutate(
-      { id: proposal.id, status: newStatus, workspace_id: workspace.workspaceId, proposal },
+      { id: proposal.id, status: newStatus, workspace_id: workspace.workspaceId, proposal, changed_by: workspace.userId },
       {
         onSuccess: () => {
           toast.success(
@@ -270,7 +296,7 @@ export function ProposalsPage() {
           {canEdit && (
             <Button className="rounded-xl h-10" onClick={() => {
               setEditingProposal(null);
-              setForm({ title: "", client_name: "", amount: "", notes: "", status: "Draft" });
+              setForm({ proposal_number: getNextProposalNumber(), title: "", client_name: "", amount: "", notes: "", status: "Draft" });
               setPdfFile(null);
               setOpen(true);
             }}>
@@ -325,6 +351,7 @@ export function ProposalsPage() {
             <table className="w-full text-sm min-w-[800px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <th className="px-3 py-3 font-semibold">ID</th>
                   <th className="px-3 py-3 font-semibold">Proposal</th>
                   <th className="px-3 py-3 font-semibold">Client</th>
                   <th className="px-3 py-3 font-semibold">Amount</th>
@@ -337,6 +364,7 @@ export function ProposalsPage() {
               <tbody>
                 {visibleProposals.map((p) => (
                   <tr key={p.id} className="border-t border-border hover:bg-muted/40 transition-colors">
+                    <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{p.proposal_number || "—"}</td>
                     {/* Proposal title */}
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-3">
@@ -386,6 +414,12 @@ export function ProposalsPage() {
                         </select>
                       ) : (
                         <Badge className={`rounded-full border-0 ${STATUS_TONE[p.status]}`}>{p.status}</Badge>
+                      )}
+                      {(p.status === "Approved" || p.status === "Rejected") && p.decided_by && (
+                        <div className="text-[9px] text-muted-foreground mt-1 leading-tight">
+                          by {members.find((m) => m.user_id === p.decided_by)?.users?.full_name || members.find((m) => m.user_id === p.decided_by)?.users?.email?.split("@")[0] || "Someone"}
+                          {p.decided_at && <> · {new Date(p.decided_at).toLocaleDateString()}</>}
+                        </div>
                       )}
                     </td>
 
@@ -488,6 +522,11 @@ export function ProposalsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
+            <div className="space-y-1">
+              <Label>Proposal ID *</Label>
+              <Input placeholder="e.g. PQ_02" value={form.proposal_number} onChange={(e) => setForm({ ...form, proposal_number: e.target.value })} />
+            </div>
+
             <div className="space-y-1">
               <Label>Proposal Title *</Label>
               <Input placeholder="e.g. Q3 Social Retainer" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />

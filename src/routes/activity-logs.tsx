@@ -89,9 +89,14 @@ export function ActivityLogsPage() {
 
         // Main status event
         if (p.updated_at && p.updated_at !== p.created_at) {
+          const statusChangedByMember = p.status_changed_by ? members.find((m) => m.user_id === p.status_changed_by) : null;
+          const statusWho = statusChangedByMember
+            ? statusChangedByMember.users?.full_name || statusChangedByMember.users?.email?.split("@")[0] || "Someone"
+            : who; // fall back to the author for older rows recorded before status_changed_by existed
+
           events.push({
-            ts: new Date(p.updated_at),
-            who,
+            ts: new Date(p.status_changed_at || p.updated_at),
+            who: statusWho,
             action,
             subject,
             client,

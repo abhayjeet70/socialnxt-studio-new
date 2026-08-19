@@ -38,6 +38,8 @@ export type Post = {
   updated_at: string;
   approved_by?: string | null;
   approved_at?: string | null;
+  status_changed_by?: string | null;
+  status_changed_at?: string | null;
   users?: Partial<User>; // author info via join
 };
 
@@ -274,16 +276,20 @@ export function useCreatePost() {
 export function useUpdatePostStatus() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, status, workspace_id, approved_by, approved_at }: { id: string; status: string; workspace_id: string; approved_by?: string; approved_at?: string }) => {
-      const updates: any = { status };
+    mutationFn: async ({ id, status, workspace_id, approved_by, approved_at, changed_by }: { id: string; status: string; workspace_id: string; approved_by?: string; approved_at?: string; changed_by?: string }) => {
+      const updates: any = { status, status_changed_at: new Date().toISOString() };
       if (approved_by !== undefined) updates.approved_by = approved_by;
       if (approved_at !== undefined) updates.approved_at = approved_at;
+      if (changed_by !== undefined) updates.status_changed_by = changed_by;
       const { data, error } = await supabase.from("posts").update(updates).eq("id", id).select().single();
       if (error) throw error;
       return data;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["posts", variables.workspace_id] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || "Failed to update status");
     },
   });
 }
@@ -318,6 +324,9 @@ export function useUpdatePostDetails() {
     onSuccess: (_, variables) => {
       // Invalidate everything to be safe
       queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || "Failed to update task");
     },
   });
 }
@@ -1184,6 +1193,9 @@ export type Proposal = {
   status: "Draft" | "Sent" | "Approved" | "Rejected";
   notes: string | null;
   pdf_url: string | null;
+  proposal_number?: string | null;
+  decided_by?: string | null;
+  decided_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -1249,11 +1261,16 @@ export function useUpdateProposal() {
 export function useUpdateProposalStatus() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, status, workspace_id, proposal }: { id: string; status: string; workspace_id: string; proposal?: Proposal }) => {
+    mutationFn: async ({ id, status, workspace_id, proposal, changed_by }: { id: string; status: string; workspace_id: string; proposal?: Proposal; changed_by?: string }) => {
       // 1. Update proposal status
+      const updates: any = { status, updated_at: new Date().toISOString() };
+      if (status === "Approved" || status === "Rejected") {
+        updates.decided_by = changed_by;
+        updates.decided_at = new Date().toISOString();
+      }
       const { error } = await supabase
         .from("proposals")
-        .update({ status, updated_at: new Date().toISOString() })
+        .update(updates)
         .eq("id", id);
       if (error) throw error;
 

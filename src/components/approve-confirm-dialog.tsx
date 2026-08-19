@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { toLinkEntries, type Post } from "@/lib/queries";
 import { LinkChip } from "@/components/link-chip";
 
@@ -50,6 +50,7 @@ export function ApproveConfirmDialog({
 }) {
   if (!post) return null;
   const scheduled = post.scheduled_for ? new Date(post.scheduled_for) : null;
+  const hasCompletedWork = toLinkEntries(post.completed_work).length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -88,6 +89,16 @@ export function ApproveConfirmDialog({
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Completed content</div>
             <CompletedWorkPreview urls={post.completed_work} />
           </div>
+
+          {!hasCompletedWork && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span className="text-xs">
+                No completed content has been uploaded for this task yet. You can still approve it,
+                but consider requesting the final files from the team first.
+              </span>
+            </div>
+          )}
 
           <p className="text-muted-foreground pt-1">
             Are you sure you want to approve this task? This moves it forward in the workflow.

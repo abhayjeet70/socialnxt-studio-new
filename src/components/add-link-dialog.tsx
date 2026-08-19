@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -10,19 +10,35 @@ export function AddLinkDialog({
   onOpenChange,
   onSubmit,
   title = "Add link",
+  initialName = "",
+  initialUrl = "",
+  submitLabel = "Add link",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (entry: { name: string; url: string }) => void;
   title?: string;
+  initialName?: string;
+  initialUrl?: string;
+  submitLabel?: string;
 }) {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
+  const [name, setName] = useState(initialName);
+  const [url, setUrl] = useState(initialUrl);
 
   const reset = () => {
-    setName("");
-    setUrl("");
+    setName(initialName);
+    setUrl(initialUrl);
   };
+
+  // Re-sync fields to the caller's initial values whenever the dialog opens, so editing a
+  // different entry doesn't carry over the previous one's values (or vice versa for "Add").
+  useEffect(() => {
+    if (open) {
+      setName(initialName);
+      setUrl(initialUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleSubmit = () => {
     const trimmedUrl = url.trim();
@@ -49,7 +65,7 @@ export function AddLinkDialog({
         <DialogFooter className="gap-2 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={!url.trim()}>
-            <LinkIcon className="h-4 w-4 mr-2" /> Add link
+            <LinkIcon className="h-4 w-4 mr-2" /> {submitLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
