@@ -5,9 +5,10 @@ import { ApproveConfirmDialog } from "@/components/approve-confirm-dialog";
 import { AddLinkDialog } from "@/components/add-link-dialog";
 import { LinkChip } from "@/components/link-chip";
 import { DesignPickerDialog } from "@/components/design-picker-dialog";
-import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers, useBulkCreatePosts, toLinkEntries, type LinkEntry, useClientSocials, useDesignerAssets, useAttachDesignerAsset, type DesignerAsset } from "@/lib/queries";
+import { MediaLibraryPickerDialog } from "@/components/media-library-picker-dialog";
+import { usePosts, useCurrentWorkspace, useUpdatePostDetails, useCreatePost, useUpdatePostStatus, useDeletePost, uploadMediaFile, Post, useClients, Client, useWorkspaceMembers, useBulkCreatePosts, toLinkEntries, type LinkEntry, useClientSocials, useDesignerAssets, useAttachDesignerAsset, type DesignerAsset, useMediaAssets, type MediaAsset } from "@/lib/queries";
 import { usePermissions } from "@/lib/permissions";
-import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download, Undo, X, Upload, Check, FileText } from "lucide-react";
+import { Loader2, UploadCloud, Link as LinkIcon, Image as ImageIcon, Trash2, ChevronDown, Download, Undo, X, Upload, Check, FileText, PlayCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -102,11 +103,14 @@ const STATUS_STYLES: Record<string, { bg: string; fg: string }> = {
   published: { bg: "#dbeafe", fg: "#2563eb" },
 };
 
+// Multi-select. The trigger deliberately shows a compact "N selected" indicator rather than
+// repeating each platform's icon+name — the row below this dropdown (in the PLATFORM cell)
+// already lists every selected platform by name with its clickable account link, so pills
+// here would just duplicate that same information a second time.
 function PlatformMultiSelect({ value, onChange, disabled, availablePlatforms }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean; availablePlatforms?: string[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const platforms = availablePlatforms !== undefined ? availablePlatforms : ALL_PLATFORMS;
-
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -128,17 +132,14 @@ function PlatformMultiSelect({ value, onChange, disabled, availablePlatforms }: 
         type="button"
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
-        className="w-full min-h-[44px] px-3 py-2 text-left text-sm flex flex-wrap gap-1 items-center bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+        className="w-full min-h-[44px] px-3 py-2 text-left text-sm flex items-center gap-1 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
       >
         {value.length === 0 ? (
           <span className="text-muted-foreground text-xs">Select platforms</span>
         ) : (
-          value.map(p => (
-            <span key={p} className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${PLATFORM_COLORS[p] || "bg-gray-100 text-gray-700"}`}>
-              <PlatformLogo platform={p} size={12} />
-              {p}
-            </span>
-          ))
+          <span className="text-xs font-semibold text-foreground/80">
+            {value.length === 1 ? value[0] : `${value.length} platforms selected`}
+          </span>
         )}
         <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
       </button>
@@ -318,8 +319,8 @@ export function TasksPage() {
     const selectedClientObj = selectedClientFilter !== "All Clients" 
       ? clients.find(c => c.name === selectedClientFilter) 
       : null;
-    const initialPlatforms = selectedPlatformFilter !== "All Platforms" 
-      ? [selectedPlatformFilter] 
+    const initialPlatforms = selectedPlatformFilter !== "All Platforms"
+      ? [selectedPlatformFilter]
       : (selectedClientObj?.platforms || []);
 
     createPost.mutate({
@@ -920,6 +921,11 @@ function TaskRow({ post, index, isClient, allClientNames,
   const { data: myDesigns = [] } = useDesignerAssets(isDesigner ? workspace?.userId : undefined);
   const attachDesign = useAttachDesignerAsset();
   const [designPickerTarget, setDesignPickerTarget] = useState<"reference_content" | "completed_work" | null>(null);
+  const { data: mediaLibraryAssets = [] } = useMediaAssets(workspace?.workspaceId);
+  const pickableMediaAssets = mediaLibraryAssets.filter(
+    (a) => a.source_type !== "link" && (a.mime_type?.startsWith("image/") || a.mime_type?.startsWith("video/") || /\.(jpe?g|gif|png|webp|svg|avif|mp4|mov|webm|avi|mkv|m4v)$/i.test(a.url))
+  );
+  const [mediaPickerTarget, setMediaPickerTarget] = useState<"reference_content" | "completed_work" | null>(null);
   const updatePost = useUpdatePostDetails();
   const updateStatus = useUpdatePostStatus();
   const deletePost = useDeletePost();
@@ -1003,14 +1009,28 @@ function TaskRow({ post, index, isClient, allClientNames,
     setDesignPickerTarget(null);
   };
 
-  // Helper to render media items (images or links)
+  const handlePickMediaAsset = (asset: MediaAsset) => {
+    if (!mediaPickerTarget) return;
+    const target = mediaPickerTarget;
+    const existing = toLinkEntries(post[target]);
+    updatePost.mutate({
+      id: post.id,
+      updates: { [target]: [...existing, { name: asset.file_name, url: asset.url }] }
+    });
+    setMediaPickerTarget(null);
+  };
+
+  // Helper to render media items (images, videos, or links)
   const renderMedia = (rawUrls: unknown, target: "reference_content" | "completed_work") => {
     const entries = toLinkEntries(rawUrls);
     if (entries.length === 0) return <div className="text-muted-foreground text-sm opacity-70 italic mb-2">No media added</div>;
     return (
       <div className="flex flex-wrap gap-2 mb-2">
         {entries.map((entry, i) => {
-          const isImage = entry.url.match(/\.(jpeg|jpg|gif|png|webp)/i) || entry.url.includes("supabase.co");
+          const isVideo = /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/i.test(entry.url);
+          // A bare Supabase Storage URL has no recognizable extension, so it only counts as
+          // an image when it isn't already identified as a video above.
+          const isImage = !isVideo && (entry.url.match(/\.(jpeg|jpg|gif|png|webp)/i) || entry.url.includes("supabase.co"));
           const removeEntry = () => {
             if (!confirm("Remove this item?")) return;
             const previous = entries;
@@ -1039,6 +1059,26 @@ function TaskRow({ post, index, isClient, allClientNames,
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeEntry(); }}
                   className="absolute top-1 right-1 bg-black/50 hover:bg-red-600 text-white rounded-full p-1 transition-colors backdrop-blur-sm shadow-sm print-hide"
                   title="Remove image"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          }
+          if (isVideo) {
+            return (
+              <div key={i} className="relative group w-16 h-16 rounded overflow-hidden border border-border shrink-0">
+                <a href={entry.url} target="_blank" rel="noreferrer" className="block w-full h-full relative">
+                  <video src={entry.url} className="w-full h-full object-cover" preload="metadata" muted playsInline />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                    <PlayCircle className="h-6 w-6 text-white drop-shadow" />
+                  </div>
+                </a>
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeEntry(); }}
+                  className="absolute top-1 right-1 bg-black/50 hover:bg-red-600 text-white rounded-full p-1 transition-colors backdrop-blur-sm shadow-sm print-hide"
+                  title="Remove video"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -1184,7 +1224,10 @@ function TaskRow({ post, index, isClient, allClientNames,
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => { setUploadingTarget("reference_content"); fileInputRef.current?.click(); }}>
             {uploadingTarget === "reference_content" ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImageIcon className="w-3 h-3 mr-1" />}
-            Upload Image
+            Add Media
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => setMediaPickerTarget("reference_content")}>
+            <UploadCloud className="w-3.5 h-3.5 mr-1" /> From Media Library
           </Button>
           {isDesigner && (
             <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => setDesignPickerTarget("reference_content")}>
@@ -1215,7 +1258,10 @@ function TaskRow({ post, index, isClient, allClientNames,
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => { setUploadingTarget("completed_work"); fileInputRef.current?.click(); }}>
             {uploadingTarget === "completed_work" ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3 mr-1" />}
-            Upload Final
+            Add Media
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => setMediaPickerTarget("completed_work")}>
+            <UploadCloud className="w-3.5 h-3.5 mr-1" /> From Media Library
           </Button>
           {isDesigner && (
             <Button variant="outline" size="sm" className="h-8 text-xs px-2.5 bg-white/50" onClick={() => setDesignPickerTarget("completed_work")}>
@@ -1472,6 +1518,12 @@ function TaskRow({ post, index, isClient, allClientNames,
               onPick={handlePickDesign}
             />
           )}
+          <MediaLibraryPickerDialog
+            open={mediaPickerTarget !== null}
+            onOpenChange={(open) => !open && setMediaPickerTarget(null)}
+            assets={pickableMediaAssets}
+            onPick={handlePickMediaAsset}
+          />
         </div>
       </td>
 
