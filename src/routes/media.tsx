@@ -4,8 +4,11 @@ import { AddLinkDialog } from "@/components/add-link-dialog";
 import {
   useCurrentWorkspace,
   useMediaAssets,
+  useDeletedMediaAssets,
   useAddMediaAsset,
   useDeleteMediaAsset,
+  useRestoreMediaAsset,
+  usePermanentlyDeleteMediaAsset,
   useUpdateMediaAsset,
   useActiveClients,
   uploadMediaFile,
@@ -15,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
-import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download, VideoIcon, PlayCircle, Link as LinkIcon, Pencil } from "lucide-react";
+import { Loader2, UploadCloud, Trash2, Copy, Search, ImageIcon, FileIcon, AlertOctagon, User, Clock, Calendar as CalendarIcon, CheckSquare, Download, VideoIcon, PlayCircle, Link as LinkIcon, Pencil, RotateCcw, XCircle } from "lucide-react";
 import { InstagramLogo, FacebookLogo, LinkedInLogo, TwitterLogo, TikTokLogo } from "@/components/social-icons";
 import { toast } from "sonner";
 
@@ -45,6 +48,8 @@ export function MediaPage() {
   const { data: assets = [], isLoading } = useMediaAssets(workspace?.workspaceId);
   const addAsset = useAddMediaAsset();
   const deleteAsset = useDeleteMediaAsset();
+  const restoreAsset = useRestoreMediaAsset();
+  const permanentlyDeleteAsset = usePermanentlyDeleteMediaAsset();
   const updateAsset = useUpdateMediaAsset();
   const { data: clientsList = [] } = useActiveClients(workspace?.workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspace?.workspaceId);
@@ -71,6 +76,8 @@ export function MediaPage() {
   const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [editingLinkAsset, setEditingLinkAsset] = useState<MediaAsset | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [showTrash, setShowTrash] = useState(false);
+  const { data: trashedAssets = [], isLoading: isLoadingTrash } = useDeletedMediaAssets(showTrash ? workspace?.workspaceId : undefined);
 
   const toggleSelection = (id: string) => {
     setSelectedAssets(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
@@ -288,16 +295,37 @@ export function MediaPage() {
 
   const handleBulkDelete = async () => {
     if (!workspace || selectedAssets.length === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedAssets.length} assets?`)) return;
+    if (!confirm(`Move ${selectedAssets.length} asset(s) to Trash? You can restore them later.`)) return;
     try {
       for (const id of selectedAssets) {
-        await deleteAsset.mutateAsync({ id, workspace_id: workspace.workspaceId });
+        await deleteAsset.mutateAsync({ id, workspace_id: workspace.workspaceId, deleted_by: workspace.userId });
       }
-      toast.success(`Deleted ${selectedAssets.length} assets`);
+      toast.success(`Moved ${selectedAssets.length} asset(s) to Trash`);
       setSelectedAssets([]);
       setIsSelectionMode(false);
     } catch (err: any) {
       toast.error("Bulk delete failed: " + err.message);
+    }
+  };
+
+  const handleRestore = async (a: MediaAsset) => {
+    if (!workspace) return;
+    try {
+      await restoreAsset.mutateAsync({ id: a.id, workspace_id: workspace.workspaceId });
+      toast.success("Restored from Trash");
+    } catch (err: any) {
+      toast.error("Restore failed: " + err.message);
+    }
+  };
+
+  const handlePermanentDelete = async (a: MediaAsset) => {
+    if (!workspace) return;
+    if (!confirm(`Permanently delete "${a.file_name || "this asset"}"? This cannot be undone.`)) return;
+    try {
+      await permanentlyDeleteAsset.mutateAsync({ id: a.id, workspace_id: workspace.workspaceId });
+      toast.success("Permanently deleted");
+    } catch (err: any) {
+      toast.error("Delete failed: " + err.message);
     }
   };
 
@@ -422,9 +450,18 @@ export function MediaPage() {
                 </Button>
               </div>
             ) : (
-              <Button variant="outline" onClick={() => setIsSelectionMode(true)} className="h-10 rounded-xl bg-white mt-2 sm:mt-0">
-                <CheckSquare className="h-4 w-4 mr-2" /> Bulk Select
-              </Button>
+              <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                <Button variant="outline" onClick={() => setIsSelectionMode(true)} className="h-10 rounded-xl bg-white">
+                  <CheckSquare className="h-4 w-4 mr-2" /> Bulk Select
+                </Button>
+                <Button
+                  variant={showTrash ? "default" : "outline"}
+                  onClick={() => setShowTrash((v) => !v)}
+                  className={showTrash ? "h-10 rounded-xl" : "h-10 rounded-xl bg-white"}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" /> Trash
+                </Button>
+              </div>
             )}
           </div>
           
@@ -468,7 +505,72 @@ export function MediaPage() {
         </div>
       }
     >
-      {isLoading ? (
+      {showTrash ? (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground">
+              Deleted assets stay here until restored or permanently removed — they aren't visible anywhere else in the app.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => setShowTrash(false)} className="h-8 text-xs bg-white shrink-0 ml-3">
+              Back to Library
+            </Button>
+          </div>
+          {isLoadingTrash ? (
+            <div className="py-20 flex justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : trashedAssets.length === 0 ? (
+            <div className="card-soft py-20 text-center text-muted-foreground">
+              <Trash2 className="h-10 w-10 mx-auto mb-3 opacity-40" />
+              Trash is empty.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {trashedAssets.map((a) => (
+                <div key={a.id} className="card-soft overflow-hidden flex flex-col relative opacity-80">
+                  <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden relative">
+                    {a.source_type === "link" ? (
+                      <div className="flex flex-col items-center text-muted-foreground p-3 text-center">
+                        <LinkIcon className="h-10 w-10" />
+                        <span className="text-[10px] mt-1 line-clamp-2">{a.file_name || a.url}</span>
+                      </div>
+                    ) : isImage(a) ? (
+                      <img src={a.url} alt={a.file_name || "asset"} className="w-full h-full object-cover grayscale-[30%]" />
+                    ) : isVideo(a) ? (
+                      <div className="relative w-full h-full">
+                        <video src={a.url} className="w-full h-full object-cover grayscale-[30%]" preload="metadata" muted playsInline />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                          <PlayCircle className="h-9 w-9 text-white drop-shadow" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center text-muted-foreground">
+                        <FileIcon className="h-10 w-10" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 flex flex-col gap-2">
+                    <span className="text-[12px] font-semibold truncate" title={a.file_name || a.url}>
+                      {a.file_name || "asset"}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Deleted {a.deleted_at ? new Date(a.deleted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ""}
+                    </span>
+                    <div className="flex gap-1.5 pt-1">
+                      <Button size="sm" variant="outline" onClick={() => handleRestore(a)} className="h-7 text-[11px] px-2 flex-1 bg-white">
+                        <RotateCcw className="h-3 w-3 mr-1" /> Restore
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handlePermanentDelete(a)} className="h-7 text-[11px] px-2 flex-1 text-red-500 border-red-200 hover:bg-red-50">
+                        <XCircle className="h-3 w-3 mr-1" /> Delete Forever
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : isLoading ? (
         <div className="py-20 flex justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -546,7 +648,7 @@ export function MediaPage() {
                     <button onClick={() => copyUrl(a.url)} className="h-7 w-7 grid place-items-center rounded-lg hover:bg-muted text-muted-foreground">
                       <Copy className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => { if (confirm("Remove this asset?")) deleteAsset.mutate({ id: a.id, workspace_id: workspace!.workspaceId }); }} className="h-7 w-7 grid place-items-center rounded-lg hover:bg-red-50 text-red-500">
+                    <button onClick={() => { if (confirm("Move this asset to Trash? You can restore it later.")) deleteAsset.mutate({ id: a.id, workspace_id: workspace!.workspaceId, deleted_by: workspace!.userId }); }} className="h-7 w-7 grid place-items-center rounded-lg hover:bg-red-50 text-red-500" title="Move to Trash">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>

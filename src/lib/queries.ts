@@ -374,6 +374,8 @@ export type MediaAsset = {
   tagged_user_ids?: string[] | null;
   source_type?: "upload" | "link";
   created_at: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   clients?: { id: string; name: string } | null;
 };
 
@@ -386,7 +388,26 @@ export function useMediaAssets(workspaceId: string | undefined) {
         .from("media_assets")
         .select("*")
         .eq("workspace_id", workspaceId!)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as MediaAsset[];
+    },
+  });
+}
+
+/** Assets in the Trash — soft-deleted, awaiting restore or permanent removal. */
+export function useDeletedMediaAssets(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: ["media_assets_trash", workspaceId],
+    enabled: !!workspaceId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("*")
+        .eq("workspace_id", workspaceId!)
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false });
       if (error) throw error;
       return data as MediaAsset[];
     },
@@ -407,7 +428,45 @@ export function useAddMediaAsset() {
   });
 }
 
+/** Soft-delete: moves an asset to the Trash rather than destroying it immediately. */
 export function useDeleteMediaAsset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, deleted_by }: { id: string; workspace_id: string; deleted_by?: string }) => {
+      const { error } = await supabase
+        .from("media_assets")
+        .update({ deleted_at: new Date().toISOString(), deleted_by })
+        .eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["media_assets", variables.workspace_id] });
+      queryClient.invalidateQueries({ queryKey: ["media_assets_trash", variables.workspace_id] });
+    },
+  });
+}
+
+export function useRestoreMediaAsset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; workspace_id: string }) => {
+      const { error } = await supabase
+        .from("media_assets")
+        .update({ deleted_at: null, deleted_by: null })
+        .eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["media_assets", variables.workspace_id] });
+      queryClient.invalidateQueries({ queryKey: ["media_assets_trash", variables.workspace_id] });
+    },
+  });
+}
+
+/** Hard delete — only reachable from the Trash view, on an already soft-deleted asset. */
+export function usePermanentlyDeleteMediaAsset() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: string; workspace_id: string }) => {
@@ -416,7 +475,7 @@ export function useDeleteMediaAsset() {
       return true;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["media_assets", variables.workspace_id] });
+      queryClient.invalidateQueries({ queryKey: ["media_assets_trash", variables.workspace_id] });
     },
   });
 }
